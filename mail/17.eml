@@ -1,0 +1,102 @@
+Return-Path: <>
+Delivered-To: muzhik@happygod.net
+Received: from uuo.happygod.net
+	by uuo.localdomain (Dovecot) with LMTP id ri0rOaN5+1xFFAAATLsgMw
+	for <muzhik@happygod.net>; Sat, 08 Jun 2019 09:02:27 +0000
+Received: by uuo.happygod.net (Postfix)
+	id E6AF942D83; Sat,  8 Jun 2019 09:02:27 +0000 (UTC)
+Date: Sat,  8 Jun 2019 09:02:27 +0000 (UTC)
+From: MAILER-DAEMON@happygod.net (Mail Delivery System)
+Subject: Undelivered Mail Returned to Sender
+To: muzhik@happygod.net
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="C9FB742D84.1559984547/uuo.happygod.net"
+Content-Transfer-Encoding: 8bit
+Message-Id: <20190608090227.E6AF942D83@uuo.happygod.net>
+
+This is a MIME-encapsulated message.
+
+--C9FB742D84.1559984547/uuo.happygod.net
+Content-Description: Notification
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 8bit
+
+This is the mail system at host uuo.happygod.net.
+
+I'm sorry to have to inform you that your message could not
+be delivered to one or more recipients. It's attached below.
+
+For further assistance, please send mail to postmaster.
+
+If you do so, please include this problem report. You can
+delete your own text from the attached returned message.
+
+                   The mail system
+
+<1413102135@qq.com>: host mx3.qq.com[203.205.219.57] said: 550 Ip frequency
+    limited [MQySyBZyAVDZdlryle6b3Ff6U8ZZCZh/uReZ72TTxJmn4wfjGISxtEQ= Blocked
+    IP 159.89.142.143].
+    http://service.mail.qq.com/cgi-bin/help?subtype=1&&id=20022&&no=1000725 (in
+    reply to end of DATA command)
+
+--C9FB742D84.1559984547/uuo.happygod.net
+Content-Description: Delivery report
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; uuo.happygod.net
+X-Postfix-Queue-ID: C9FB742D84
+X-Postfix-Sender: rfc822; muzhik@happygod.net
+Arrival-Date: Sat,  8 Jun 2019 09:01:52 +0000 (UTC)
+
+Final-Recipient: rfc822; 1413102135@qq.com
+Original-Recipient: rfc822;1413102135@qq.com
+Action: failed
+Status: 5.0.0
+Remote-MTA: dns; mx3.qq.com
+Diagnostic-Code: smtp; 550 Ip frequency limited
+    [MQySyBZyAVDZdlryle6b3Ff6U8ZZCZh/uReZ72TTxJmn4wfjGISxtEQ= Blocked IP
+    159.89.142.143].
+    http://service.mail.qq.com/cgi-bin/help?subtype=1&&id=20022&&no=1000725
+
+--C9FB742D84.1559984547/uuo.happygod.net
+Content-Description: Undelivered Message
+Content-Type: message/rfc822
+Content-Transfer-Encoding: 8bit
+
+Return-Path: <muzhik@happygod.net>
+Received: by uuo.happygod.net (Postfix, from userid 1002)
+	id C9FB742D84; Sat,  8 Jun 2019 09:01:52 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=simple/simple; d=happygod.net; s=mail;
+	t=1559984512; bh=/qs+FuetWAAb6Ick5wBdewsv3AM/IwudIwGNPWdMl2c=;
+	h=From:To:Subject:Date:From;
+	b=aMT3PxOWXF0AcGIKUYkNF46L0rFXmjjipCnZCG/tViKCJ3/MzWGyNlcSjrST/8L9h
+	 HnHoQqljX1Vo3O2yjtoyv80JKK9R/TSXoumrWh3tsaOQCTJe/bqbtt+kyH0txqX0o4
+	 ZIImtZSnuAk/1s6RmjwMl3GAO821t16JKYzoYBUyBvjzqGfYfAxxqPKTKadhslpdsF
+	 +a6TVbziwXakfqigu6uH1RBaJyNoB19xImASoqkF+rVgLU9ZZDfxN4qfEEWR12Qmqf
+	 ga+N0rWurSIuigPki/4uH4Abm2yfLGhYjTIis/XZTk0h89+Bq9yAKiRvD0Am+zwBtg
+	 LhWnFcfLFH+/w==
+Received: from muzhik (unknown [218.197.153.249])
+	by uuo.happygod.net (Postfix) with ESMTPA id 2385E425E4
+	for <1413102135@qq.com>; Sat,  8 Jun 2019 09:01:49 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=simple/simple; d=happygod.net; s=mail;
+	t=1559984510; bh=/qs+FuetWAAb6Ick5wBdewsv3AM/IwudIwGNPWdMl2c=;
+	h=From:To:Subject:From;
+	b=qEtiBwvyjXiuxmniRT6+DHRsfihW0jD8hbB8DV3udPsU9HUirJzlCZRVW6XdIMncc
+	 Du4oogz790sMe7Mukg14FdMqFUsZFksgJPMGjCNbqbiY8iDfoSinvkLkKx7wLo6n+3
+	 bbAaL0eiuvyxA0QY2GtbehWbQ1bGtllanEZk+KwFMdK3Xn772LT5DpotHg7trch3bH
+	 5U8Caj3Q54hFwtRhr59bogJXBwCnPVmuvIq6tGM6tRjXsJlkujdRf3r5tsANS+XJQx
+	 y2BZHKjM3aY0uSq3U0JY3Fn4zlBi8lqbdj4MIPaDzjVeNxrxCw43pVIpVB6Eyj4JLs
+	 3DK2pP0ZepX3w==
+From: muzhik@happygod.net
+To: 1413102135@qq.com
+Subject: MZK is superb
+Message-Id: <20190608090152.C9FB742D84@uuo.happygod.net>
+Date: Sat,  8 Jun 2019 09:01:52 +0000 (UTC)
+
+Once you see this email, it means smtp protocol is successfully implemented!
+
+Project Muzhik
+
+--C9FB742D84.1559984547/uuo.happygod.net--
