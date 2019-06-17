@@ -4,7 +4,6 @@ import java.net.*;
 import java.util.*;
 
 import common.*;
-import mail.*;
 import webui.*;
 import webui.http.*;
 
@@ -56,6 +55,7 @@ public class Main
 				    	put("/accountadmin","AccountAdmin");
 				    	put("/mailadmin","MailAdmin");
 				    	put("/download","Download");
+				    	put("/upload","Upload");
 				    }
 			    });
 		    }
