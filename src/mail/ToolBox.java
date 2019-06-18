@@ -81,16 +81,15 @@ public class ToolBox
 					return false;
 				}
 			}
-			if(!smtp.mailFrom(mail.sender))
-			{
-				System.err.println("Relay not allowed!");
-				return false;
-			}
+			if(!smtp.mailFrom(mail.sender)) return false;
 			flag=false;
 			for(String receiver:mail.receivers)
 				flag|=smtp.rcptTo(receiver);
 			if(!flag)
+			{
+				System.err.println("Relay not allowed!");
 				return false;
+			}
 			String uid=smtp.data(mail.toString());
 			if(uid==null)
 			{
