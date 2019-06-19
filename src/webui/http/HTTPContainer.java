@@ -1,5 +1,6 @@
 package webui.http;
 
+import common.*;
 import webui.*;
 
 import java.net.*;
@@ -17,6 +18,15 @@ public class HTTPContainer extends Container
 		{
 			request=new Request(socket);
 			request.parse();
+			if(Shared.AUTH!=null)
+			{
+				String authorization=request.getHeader("authorization");
+				if(authorization==null||!authorization.substring(authorization.indexOf(' ')+1).equals(Shared.AUTH))
+				{
+					response.setHeader("www-authenticate","Basic realm=\"Connecting to Muzhik\"");
+					throw new HTTPException(401);
+				}
+			}
 			Class<? extends Handler> servletClass=FileManager.class;
 			Map<String,String> exe=(Map<String, String>)env.get("exe");
 			if(exe!=null)

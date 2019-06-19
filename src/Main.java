@@ -1,6 +1,7 @@
 import java.awt.*;
 import java.io.*;
 import java.net.*;
+import java.nio.charset.*;
 import java.util.*;
 
 import common.*;
@@ -12,6 +13,8 @@ public class Main
     public static void main(String[] args) throws Exception
     {
 	    Scanner sc=new Scanner(new BufferedInputStream(new FileInputStream(args[0])));
+	    boolean autoOpen=false;
+	    String username=null,password=null;
 	    while(sc.hasNext())
 	    {
 	    	String line=sc.nextLine();
@@ -25,6 +28,12 @@ public class Main
 			    	break;
 			    case "WEBADDRESS":
 				    Shared.WEBADDRESS=strs[1];
+				    break;
+			    case "WEBUSERNAME":
+				    username=strs[1];
+				    break;
+			    case "WEBPASSWORD":
+				    password=strs[1];
 				    break;
 			    case "MAILROOT":
 				    Shared.MAILROOT=strs[1];
@@ -42,9 +51,11 @@ public class Main
 				    Shared.DBPASSWORD=strs[1];
 				    break;
 			    case "AUTOOPENBROWSER":
-			    	Shared.AUTOOPENBROWSER=Boolean.parseBoolean(strs[1]);
+			    	autoOpen=Boolean.parseBoolean(strs[1]);
 		    }
 	    }
+	    if(username!=null&&password!=null)
+	    	Shared.AUTH=new String(Base64.getEncoder().encode((username+":"+password).getBytes()),StandardCharsets.US_ASCII);
 	    Server server=new Server();
 	    HTTPContainer container=new HTTPContainer();
 	    container.env(new HashMap<>(){
@@ -61,7 +72,7 @@ public class Main
 		    }
 	    });
         server.add(Shared.WEBADDRESS,container);
-	    if(Shared.AUTOOPENBROWSER&&Desktop.isDesktopSupported())
+	    if(autoOpen&&Desktop.isDesktopSupported())
 	    {
 		    try
 		    {
