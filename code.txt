@@ -1,0 +1,3735 @@
+---------- BEGIN src/common/JSON.java ----------
+package common;
+
+import java.util.*;
+import java.util.Date;
+public class JSON
+{
+	private StringBuilder sb=new StringBuilder();
+	public JSON(Object o)
+	{
+		toJSON(o);
+	}
+	private void toJSON(Object o)
+	{
+
+		if(o instanceof List)
+		{
+			sb.append('[');
+			for(Object obj:(List)o)
+			{
+				toJSON(obj);
+				sb.append(',');
+			}
+			sb.append(']');
+		}
+		else if(o instanceof Map)
+		{
+			sb.append('{');
+			for(Object k:((Map)o).keySet())
+			{
+				toJSON(k);
+				sb.append(':');
+				toJSON(((Map)o).get(k));
+				sb.append(',');
+			}
+			sb.append('}');
+		}
+		else if(o instanceof String)
+			sb.append("\"").append(unescape((String)o)).append("\"");
+		else if(o instanceof Date)
+			sb.append("\"").append(o).append("\"");
+		else
+			sb.append(o);
+	}
+	private String unescape(String s)
+	{
+		char[] str=s.toCharArray();
+		StringBuilder sb=new StringBuilder();
+		for(char c:str)
+		{
+			switch(c)
+			{
+				case '\r':
+					sb.append("\\r");
+					break;
+				case '\n':
+					sb.append("\\n");
+					break;
+				case '"':
+					sb.append("\\\"");
+					break;
+				case '\'':
+					sb.append("\\'");
+					break;
+				case '\\':
+					sb.append("\\\\");
+					break;
+				default:
+					sb.append(c);
+			}
+		}
+		return sb.toString();
+	}
+	@Override
+	public String toString()
+	{
+		return sb.toString();
+	}
+}
+
+---------- END src/common/JSON.java ----------
+
+---------- BEGIN src/common/MD5.java ----------
+package common;
+
+import java.security.*;
+public class MD5
+{
+	private static final String[] hexDigIts={"0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f"};
+	public static String MD5Encode(String origin,String charsetname)
+	{
+		String resultString=null;
+		try
+		{
+			resultString=origin;
+			MessageDigest md=MessageDigest.getInstance("MD5");
+			if(null==charsetname||"".equals(charsetname))
+				resultString=byteArrayToHexString(md.digest(resultString.getBytes()));
+			else
+				resultString=byteArrayToHexString(md.digest(resultString.getBytes(charsetname)));
+		}
+		catch(Exception e){}
+		return resultString;
+	}
+
+	private static String byteArrayToHexString(byte[] b)
+	{
+		StringBuilder resultSb=new StringBuilder();
+		for(byte i:b)
+			resultSb.append(byteToHexString(i));
+		return resultSb.toString();
+	}
+
+	private static String byteToHexString(byte b)
+	{
+		int n=b;
+		if(n<0)
+			n+=256;
+		int d1=n/16;
+		int d2=n%16;
+		return hexDigIts[d1]+hexDigIts[d2];
+	}
+}
+
+---------- END src/common/MD5.java ----------
+
+---------- BEGIN src/common/Pipe.java ----------
+package common;
+
+import java.io.*;
+
+import webui.*;
+import webui.http.*;
+
+public class Pipe implements Runnable
+{
+	private final InputStream in;
+	private final OutputStream out;
+	private HTTPException he;
+	private Pipe(InputStream in,OutputStream out)
+	{
+		this.in=in;
+		this.out=out;
+	}
+	@Override
+	public void run()
+	{
+		he=pipeCore(in,out);
+	}
+	private static HTTPException pipeCore(InputStream in,OutputStream out)
+	{
+		try
+		{
+			byte[] buffer=new byte[2048];
+			int size;
+			while((size=in.read(buffer))>0)
+			{
+				out.write(buffer,0,size);
+				out.flush();
+			}
+		}
+		catch(IOException ioe)
+		{
+			ioe.printStackTrace();
+			return new HTTPException(500,ioe);
+		}
+		return null;
+	}
+	public static void pipe(InputStream in,OutputStream out) throws HTTPException
+	{
+		HTTPException he=pipeCore(in,out);
+		if(he!=null)
+			throw he;
+	}
+	public static void pipe(InputStream in1,OutputStream out2,InputStream in2,OutputStream out1) throws HTTPException
+	{
+		Pipe p=new Pipe(in2,out1);
+		Shared.THREAD_POOL.execute(p);
+		pipe(in1,out2);
+		if(p.he!=null)
+			throw p.he;
+	}
+}
+
+---------- END src/common/Pipe.java ----------
+
+---------- BEGIN src/common/Shared.java ----------
+package common;
+
+import java.util.concurrent.*;
+public class Shared
+{
+	public static String WEBROOT,WEBADDRESS,MAILROOT,DBDRIVER, DBURL, DBUSERNAME, DBPASSWORD, AUTH;
+	public static final ExecutorService THREAD_POOL=Executors.newCachedThreadPool();
+}
+
+---------- END src/common/Shared.java ----------
+
+---------- BEGIN src/database/CRUD.java ----------
+package database;
+
+import java.sql.*;
+public class CRUD
+{
+	private static boolean initiated;
+	private static CRUD crud=new CRUD();
+	private CRUD()
+	{
+		if(!initiated)
+			initiated=init();
+	}
+	private static boolean init()
+	{
+		DB.connect();
+		PreparedStatement createTable;
+		try
+		{
+			if(!DB.tableExists("user"))
+			{
+				createTable=DB.conn.prepareStatement("CREATE TABLE `user` ("+" `username` varchar(60) NOT NULL,"+" `password` varchar(60) NOT NULL,"+" `smtp` varchar(60) DEFAULT NULL,"+" `pop3` varchar(60) DEFAULT NULL,"+" PRIMARY KEY (`username`)"+") ENGINE=InnoDB DEFAULT CHARSET=utf8;");
+				createTable.executeUpdate();
+			}
+			if(!DB.tableExists("mail"))
+			{
+				createTable=DB.conn.prepareStatement("CREATE TABLE `mail` ("+" `id` int(11) NOT NULL AUTO_INCREMENT,"+" `username` varchar(60) DEFAULT NULL,"+" `status` enum('R','S','D','T') NOT NULL,"+" `mtime` datetime DEFAULT NULL,"+" `uid` varchar(60) DEFAULT NULL,"+" `sender` varchar(60) DEFAULT NULL,"+" `receivers` varchar(250) DEFAULT NULL,"+" `subject` varchar(250) DEFAULT NULL,"+" PRIMARY KEY (`id`),"+" KEY `username` (`username`),"+" CONSTRAINT `mail_ibfk_1` FOREIGN KEY (`username`) REFERENCES `user` (`username`) ON DELETE CASCADE ON UPDATE CASCADE"+") ENGINE=InnoDB DEFAULT CHARSET=utf8;");
+				createTable.executeUpdate();
+			}
+			return true;
+		}
+		catch(SQLException e)
+		{
+			e.printStackTrace();
+			return false;
+		}
+	}
+	public static boolean insertUser(String username,String password,String smtp,String pop3)
+	{
+		DB.connect();
+		try
+		{
+			PreparedStatement ps=DB.conn.prepareStatement("INSERT INTO `user` VALUES(?,?,?,?);");
+			ps.setString(1,username);
+			if(password!=null)
+				ps.setString(2,password);
+			else
+				ps.setNull(2,Types.VARCHAR);
+			if(smtp!=null)
+				ps.setString(3,smtp);
+			else
+				ps.setNull(3,Types.VARCHAR);
+			if(pop3!=null)
+				ps.setString(4,pop3);
+			else
+				ps.setNull(4,Types.VARCHAR);
+			return ps.executeUpdate()>0;
+		}
+		catch(SQLException e)
+		{
+			return false;
+		}
+	}
+	public static Result selectUser()
+	{
+		DB.connect();
+		try
+		{
+			Result result=new Result();
+			PreparedStatement ps=DB.conn.prepareStatement("SELECT * FROM `user` ORDER BY `username`;");
+			result.set(ps.executeQuery());
+			return result;
+		}
+		catch(SQLException e)
+		{
+			return null;
+		}
+	}
+	public static Result selectUser(String username)
+	{
+		DB.connect();
+		try
+		{
+			Result result=new Result();
+			PreparedStatement ps=DB.conn.prepareStatement("SELECT * FROM `user` WHERE `username`=?;");
+			ps.setString(1,username);
+			result.set(ps.executeQuery());
+			return result;
+		}
+		catch(SQLException e)
+		{
+			return null;
+		}
+	}
+	public static boolean updateUser(String oldUsername,String username,String password,String smtp,String pop3)
+	{
+		DB.connect();
+		try
+		{
+			PreparedStatement ps=DB.conn.prepareStatement("UPDATE `user` SET `username`=?,`password`=?,`smtp`=?,`pop3`=? WHERE `username`=?;");
+			ps.setString(1,username);
+			if(password!=null)
+				ps.setString(2,password);
+			else
+				ps.setNull(2,Types.VARCHAR);
+			if(smtp!=null)
+				ps.setString(3,smtp);
+			else
+				ps.setNull(3,Types.VARCHAR);
+			if(pop3!=null)
+				ps.setString(4,pop3);
+			else
+				ps.setNull(4,Types.VARCHAR);
+			ps.setString(5,oldUsername);
+			return ps.executeUpdate()>0;
+		}
+		catch(SQLException e)
+		{
+			return false;
+		}
+	}
+	public static boolean deleteUser(String username)
+	{
+		DB.connect();
+		try
+		{
+			PreparedStatement ps=DB.conn.prepareStatement("DELETE FROM `user` WHERE `username`=?;");
+			ps.setString(1,username);
+			return ps.executeUpdate()>0;
+		}
+		catch(SQLException e)
+		{
+			return false;
+		}
+	}
+	public static int insertMail(String username,String status,Timestamp mtime,String uid,String sender,String receivers,String subject)
+	{
+		DB.connect();
+		try
+		{
+			PreparedStatement ps=DB.conn.prepareStatement("INSERT INTO `mail`(`username`,`status`,`mtime`,`uid`,`sender`,`receivers`,`subject`) VALUES(?,?,?,?,?,?,?);");
+			if(username!=null)
+				ps.setString(1,username);
+			else
+				ps.setNull(1,Types.VARCHAR);
+			ps.setString(2,status);
+			if(mtime!=null)
+				ps.setTimestamp(3,mtime);
+			else
+				ps.setNull(3,Types.TIMESTAMP);
+			if(uid!=null)
+				ps.setString(4,uid);
+			else
+				ps.setNull(4,Types.TIMESTAMP);
+			if(sender!=null)
+				ps.setString(5,sender);
+			else
+				ps.setNull(5,Types.VARCHAR);
+			if(receivers!=null)
+				ps.setString(6,receivers);
+			else
+				ps.setNull(6,Types.VARCHAR);
+			if(subject!=null)
+				ps.setString(7,subject);
+			else
+				ps.setNull(7,Types.VARCHAR);
+			if(ps.executeUpdate()>0)
+			{
+				Result result=selectMail(username,status,uid);
+				return (int)result.values.get(0).get("id");
+			}
+			else
+				return -1;
+		}
+		catch(SQLException e)
+		{
+			return -1;
+		}
+	}
+	public static Result selectMail(int id)
+	{
+		DB.connect();
+		try
+		{
+			Result result=new Result();
+			PreparedStatement ps=DB.conn.prepareStatement("SELECT * FROM `mail` WHERE `id`=?;");
+			ps.setInt(1,id);
+			result.set(ps.executeQuery());
+			return result;
+		}
+		catch(SQLException e)
+		{
+			return null;
+		}
+	}
+	public static Result selectMail(String username,String status,String uid)
+	{
+		DB.connect();
+		String c1="`username`",c2="`status`",c3="`uid`";
+		try
+		{
+			Result result=new Result();
+			if(username==null)
+				c1=username="1";
+			if(status==null)
+				c2=status="1";
+			if(uid==null)
+				c3=uid="1";
+			PreparedStatement ps=DB.conn.prepareStatement("SELECT * FROM `mail` WHERE "+c1+"=? AND "+c2+"=? AND "+c3+"=? ORDER BY `mtime` DESC;");
+			ps.setString(1,username);
+			ps.setString(2,status);
+			ps.setString(3,uid);
+			result.set(ps.executeQuery());
+			return result;
+		}
+		catch(SQLException e)
+		{
+			return null;
+		}
+	}
+	public static boolean updateMail(int id,String username,String status,Timestamp mtime,String uid,String sender,String receivers,String subject)
+	{
+		try
+		{
+			DB.connect();
+			PreparedStatement ps=DB.conn.prepareStatement("UPDATE `mail` SET `username`=?,`status`=?,`mtime`=?,`uid`=?,`sender`=?,`receivers`=?,`subject`=? WHERE `id`=?;");
+			if(username!=null)
+				ps.setString(1,username);
+			else
+				ps.setNull(1,Types.VARCHAR);
+			ps.setString(2,status);
+			if(mtime!=null)
+				ps.setTimestamp(3,mtime);
+			else
+				ps.setNull(3,Types.TIMESTAMP);
+			if(uid!=null)
+				ps.setString(4,uid);
+			else
+				ps.setNull(4,Types.TIMESTAMP);
+			if(sender!=null)
+				ps.setString(5,sender);
+			else
+				ps.setNull(5,Types.VARCHAR);
+			if(receivers!=null)
+				ps.setString(6,receivers);
+			else
+				ps.setNull(6,Types.VARCHAR);
+			if(subject!=null)
+				ps.setString(7,subject);
+			else
+				ps.setNull(7,Types.VARCHAR);
+			ps.setInt(8,id);
+			return ps.executeUpdate()>0;
+		}
+		catch(SQLException e)
+		{
+			return false;
+		}
+	}
+	public static boolean deleteMail(int id)
+	{
+		DB.connect();
+		try
+		{
+			PreparedStatement ps=DB.conn.prepareStatement("DELETE FROM `mail` WHERE `id`=?;");
+			ps.setInt(1,id);
+			return ps.executeUpdate()>0;
+		}
+		catch(SQLException e)
+		{
+			return false;
+		}
+	}
+}
+
+---------- END src/database/CRUD.java ----------
+
+---------- BEGIN src/database/DB.java ----------
+package database;
+
+import java.sql.*;
+import java.util.*;
+
+import common.*;
+
+class DB
+{
+	static Connection conn;
+	static boolean connect()
+	{
+		try
+		{
+			if(conn==null||conn.isClosed())
+			{
+				Class.forName(Shared.DBDRIVER);
+				conn=DriverManager.getConnection(Shared.DBURL,Shared.DBUSERNAME,Shared.DBPASSWORD);
+			}
+			return true;
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+			disconnect();
+			return false;
+		}
+	}
+	static void disconnect()
+	{
+		try
+		{
+			conn.close();
+		}
+		catch(Exception e)
+		{}
+		conn=null;
+	}
+	static boolean tableExists(String table)
+	{
+		connect();
+		boolean flag=false;
+		try
+		{
+			ResultSet rs=conn.getMetaData().getTables(null,null,"%",null);
+			while(rs.next())
+			{
+				if(table.equalsIgnoreCase(rs.getString("TABLE_NAME")))
+				{
+					flag=true;
+					break;
+				}
+			}
+		}
+		catch(Exception e){}
+		return flag;
+	}
+	static List<String> getPrimaryKey(String table)
+	{
+		connect();
+		List<String> pks=new LinkedList<>();
+		try
+		{
+			ResultSet rs=conn.getMetaData().getPrimaryKeys(conn.getCatalog(),conn.getMetaData().getUserName(),table);
+			while(rs.next())
+				pks.add(rs.getString("COLUMN_NAME"));
+		}
+		catch(Exception e){}
+		return pks;
+	}
+}
+
+---------- END src/database/DB.java ----------
+
+---------- BEGIN src/database/Result.java ----------
+package database;
+
+import java.sql.*;
+import java.util.*;
+
+public class Result
+{
+	public int rows;
+	public final List<String> columns=new ArrayList<>();
+	public final List<Map<String,Object>> values=new ArrayList<>();
+	void set(ResultSet rs)
+	{
+		try
+		{
+			ResultSetMetaData rsmd;
+			rsmd=rs.getMetaData();
+			rs.last();
+			rows=rs.getRow();
+			rs.first();
+			int col=rsmd.getColumnCount();
+			//column names
+			for(int j=1;j<=col;j++)
+				columns.add(rsmd.getColumnName(j));
+			//values
+			for(int i=1;i<=rows;i++)
+			{
+				Map<String,Object> map=new HashMap<>();
+				for(int j=1;j<=col;j++)
+				{
+					String key=rsmd.getColumnName(j);
+					Object value;
+					switch(rsmd.getColumnType(j))
+					{
+						case Types.TIMESTAMP:
+							value=rs.getTimestamp(j);
+							break;
+						case Types.INTEGER:
+						case Types.BIGINT:
+							value=rs.getInt(j);
+							break;
+						default:
+						case Types.VARCHAR:
+						case Types.CHAR:
+							value=rs.getString(j);
+							break;
+					}
+					map.put(key,value);
+				}
+				values.add(map);
+				rs.next();
+			}
+			rs.close();
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+	}
+}
+
+---------- END src/database/Result.java ----------
+
+---------- BEGIN src/mail/Account.java ----------
+package mail;
+
+import java.net.*;
+import java.util.*;
+
+import database.*;
+public class Account
+{
+	public final String username,password;
+	public final InetAddress smtpAddress,pop3Address;
+	public final int smtpPort,pop3Port;
+	public static Account getByName(String username)
+	{
+		Result result=CRUD.selectUser(username);
+		if(result==null||result.rows==0)
+			return null;
+		Map<String,Object> map=result.values.get(0);
+		return new Account(username,(String)map.get("password"),(String)map.get("smtp"),(String)map.get("pop3"));
+	}
+	private Account(String username,String password,String smtpServer,String pop3Server)
+	{
+		this.username=username;
+		this.password=password;
+		InetAddress smtpAddress,pop3Address;
+		String[] strs=smtpServer.split(":");
+		if(strs.length>1)
+			smtpPort=Integer.parseInt(strs[1]);
+		else
+			smtpPort=25;
+		try
+		{
+			smtpAddress=InetAddress.getByName(strs[0]);
+		}
+		catch(Exception e)
+		{
+			smtpAddress=null;
+		}
+		this.smtpAddress=smtpAddress;
+		strs=pop3Server.split(":");
+		if(strs.length>1)
+			pop3Port=Integer.parseInt(strs[1]);
+		else
+			pop3Port=110;
+		try
+		{
+			pop3Address=InetAddress.getByName(strs[0]);
+		}
+		catch(Exception e)
+		{
+			pop3Address=null;
+		}
+		this.pop3Address=pop3Address;
+//		if(getByName(username)==null)
+//			CRUD.insertUser(username,password,smtpServer,pop3Server);
+//		else
+//			CRUD.updateUser(username,username,password,smtpServer,pop3Server);
+	}
+//	public boolean remove()
+//	{
+//		return CRUD.deleteUser(username);
+//	}
+}
+
+---------- END src/mail/Account.java ----------
+
+---------- BEGIN src/mail/Mail.java ----------
+package mail;
+
+import java.io.*;
+import java.nio.charset.*;
+import java.nio.file.*;
+import java.text.*;
+import java.util.*;
+import java.util.regex.*;
+public class Mail
+{
+	public static final Pattern pattern=Pattern.compile("([.a-zA-Z0-9_-]+@[a-zA-Z0-9_-]+(\\.[a-zA-Z0-9_-]+)+)");
+	private static final SimpleDateFormat sdf=new SimpleDateFormat("E, dd MMM yyyy HH:mm:ss Z",Locale.US);
+	public String sender,subject,content;
+	public List<String> receivers;
+	public List<Mail> attachments;
+	public Date date;
+	public byte[] contentb;
+	private final List<Pair<String,List<String>>> headers=new ArrayList<>();
+	private final List<String> body=new ArrayList<>();
+	private String raw;
+	public Mail(){}
+	public Mail(String mail)
+	{
+		this();
+		raw=mail;
+		parse();
+	}
+	public Mail(File file)
+	{
+		this();
+		try
+		{
+			raw=Files.readString(file.toPath(),StandardCharsets.US_ASCII);
+			parse();
+		}
+		catch(IOException fe)
+		{}
+	}
+	private String getHeader(String key)
+	{
+		String value=null;
+		for(int i=headers.size()-1;i>=0;i--)
+		{
+			Pair<String,List<String>> p=headers.get(i);
+			if(key.equalsIgnoreCase(p.key))
+			{
+				value=p.value.get(0);
+				for(int j=1;j<p.value.size();j++)
+					value+=" "+p.value.get(j);
+				break;
+			}
+		}
+		return value;
+	}
+	private void parse()
+	{
+		Scanner sc=new Scanner(raw);
+		Pair<String,List<String>> pair=null;
+		while(true)
+		{
+			String line=sc.nextLine();
+			if(line.isBlank())
+			{
+				if(pair==null)
+					continue;
+				else
+					break;
+			}
+			else if(line.substring(0,1).isBlank())
+			{
+				pair.value.add(line.stripLeading());
+			}
+			else
+			{
+				int idx=line.indexOf(":");
+				List<String> list=new ArrayList<>();
+				list.add(line.substring(idx+1).stripLeading());
+				pair=new Pair<>(line.substring(0,idx),list);
+				headers.add(pair);
+			}
+		}
+		while(sc.hasNext())
+			body.add(sc.nextLine());
+		Pattern pattern;
+		Matcher matcher;
+		sender=getHeader("From");
+		if(sender!=null)
+		{
+			matcher=Mail.pattern.matcher(getHeader("From"));
+			if(matcher.find())
+				sender=matcher.group(0);
+			else
+				sender=null;
+		}
+		subject=getHeader("Subject");
+		String rs=getHeader("To");
+		if(rs!=null)
+		{
+			receivers=new ArrayList<>();
+			matcher=Mail.pattern.matcher(rs);
+			while(matcher.find())
+				receivers.add(matcher.group(0));
+			if(receivers.isEmpty())
+				receivers=null;
+		}
+		else
+			receivers=null;
+		try
+		{
+			date=sdf.parse(getHeader("Date"));
+		}
+		catch(Exception e)
+		{
+			date=null;
+		}
+		String contentType=getHeader("Content-Type"),encoding=getHeader("Content-Transfer-Encoding");
+		StringBuilder sb=new StringBuilder();
+		for(int i=0;i<body.size();i++)
+		{
+			sb.append(body.get(i));
+			if(i!=body.size()-1)
+				sb.append("\r\n");
+		}
+		content=sb.toString();
+		if("base64".equalsIgnoreCase(encoding))
+		{
+			Base64.Decoder decoder=Base64.getMimeDecoder();
+			contentb=decoder.decode(content);
+			content=new String(contentb);
+		}
+		else
+			contentb=content.getBytes();
+		attachments=null;
+		if(contentType!=null)
+		{
+			pattern=Pattern.compile("boundary=\"(.*)\"");
+			matcher=pattern.matcher(contentType);
+			if(matcher.find())
+			{
+				attachments=new ArrayList<>();
+				String boundary="--"+matcher.group(1);
+				String strs[]=content.split(boundary);
+				content="";
+				for(int i=1;i<strs.length-1;i++)
+				{
+					Mail m=new Mail(strs[i]);
+					String disposition=m.getHeader("Content-Disposition");
+					if(disposition!=null&&disposition.contains("attachment"))
+					{
+						pattern=Pattern.compile("filename=\"(.*)\"");
+						matcher=pattern.matcher(disposition);
+						if(matcher.find())
+							m.subject=matcher.group(1);
+						attachments.add(m);
+					}
+					else
+						content+="\r\n"+m.content;
+				}
+			}
+		}
+	}
+	public void compose()
+	{
+		headers.clear();
+		body.clear();
+		raw="";
+		if(sender==null||receivers==null||receivers.isEmpty())
+			return;
+		List<String> values;
+		values=new ArrayList<>();
+		values.add("\""+sender.split("@")[0]+"\" <"+sender+">");
+		headers.add(new Pair<>("From",values));
+		values=new ArrayList<>();
+		for(String receiver:receivers)
+			values.add("\""+receiver.split("@")[0]+"\" <"+receiver+">");
+		headers.add(new Pair<>("To",values));
+		if(subject!=null)
+		{
+			values=new ArrayList<>();
+			values.add(subject);
+			headers.add(new Pair<>("Subject",values));
+		}
+		if(date!=null)
+		{
+			values=new ArrayList<>();
+			values.add(sdf.format(date));
+			headers.add(new Pair<>("Date",values));
+		}
+		if(content==null)
+			content="";
+		Collections.addAll(body,content.split("\r?\n"));
+		StringBuilder sb=new StringBuilder();
+		for(Pair<String,List<String>> pair:headers)
+		{
+			sb.append(pair.key).append(": ").append(pair.value.get(0)).append("\r\n");
+			for(int i=1;i<pair.value.size();i++)
+				sb.append("\t").append(pair.value.get(i)).append("\r\n");
+		}
+		sb.append("\r\n");
+		for(String line:body)
+			sb.append(line).append("\r\n");
+		raw=sb.substring(0,sb.length()-2);
+	}
+	@Override
+	public String toString()
+	{
+		return raw;
+	}
+	public boolean store(File file)
+	{
+		try
+		{
+			PrintWriter pw=new PrintWriter(new BufferedOutputStream(new FileOutputStream(file)));
+			pw.print(raw);
+			pw.flush();
+			pw.close();
+			return true;
+		}
+		catch(FileNotFoundException fe)
+		{
+			return false;
+		}
+	}
+	public static class Pair<K,V>
+	{
+		final K key;
+		final V value;
+		Pair(K key,V value)
+		{
+			this.key=key;
+			this.value=value;
+		}
+		@Override
+		public boolean equals(Object obj)
+		{
+			if(!(obj instanceof Pair))
+				   return false;
+			Pair pair=(Pair)obj;
+			return key.equals(pair.key)&&value.equals(pair.value);
+		}
+		@Override
+		public int hashCode()
+		{
+			return key.hashCode()|value.hashCode();
+		}
+	}
+}
+
+---------- END src/mail/Mail.java ----------
+
+---------- BEGIN src/mail/POP3.java ----------
+package mail;
+
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.regex.*;
+
+import common.*;
+class POP3
+{
+	private static final String OK="+OK",ERR="-ERR";
+	private Socket socket;
+	private Scanner sc;
+	private PrintWriter pw;
+	private String lastLine;
+
+	boolean connect(InetAddress inetAddress,int port)
+	{
+		disconnect();
+		try
+		{
+			socket=new Socket(inetAddress,port);
+			sc=new Scanner(new BufferedInputStream(socket.getInputStream()));
+			pw=new PrintWriter(new BufferedOutputStream(socket.getOutputStream()));
+			if(checkLine()) return true;
+			else
+			{
+				disconnect();
+				return false;
+			}
+		}
+		catch(Exception e)
+		{
+			disconnect();
+			return false;
+		}
+	}
+	void disconnect()
+	{
+		try
+		{
+			if(sc!=null)
+				sc.close();
+			if(pw!=null)
+			{
+				pw.flush();
+				pw.close();
+			}
+			if(socket!=null)
+				socket.close();
+		}
+		catch(Exception e){}
+	}
+	private boolean checkLine()
+	{
+		lastLine=sc.nextLine();
+		System.err.println(lastLine);
+		return OK.equals(lastLine.split(" ")[0]);
+	}
+	private String readLines()
+	{
+		StringBuilder sb=new StringBuilder();
+		String str;
+		while(true)
+		{
+			str=sc.nextLine();
+			if(".".equals(str))
+				break;
+			else if(str.startsWith("."))
+				str=str.substring(1);
+			sb.append(str).append("\r\n");
+		}
+		if(sb.length()<2)
+			return "";
+		return sb.substring(0,sb.length()-2);
+	}
+	private void writeLine(String str)
+	{
+		pw.println(str);
+		pw.flush();
+	}
+	boolean login(String username,String password,String method)
+	{
+		switch(method)
+		{
+			case "PLAIN":
+				writeLine("USER "+username);
+				if(!checkLine()) return false;
+				writeLine("PASS "+password);
+				if(!checkLine()) return false;
+				break;
+			case "APOP":
+				Matcher matcher=Pattern.compile("(<.+>)").matcher(lastLine);
+				if(!matcher.find())
+					return false;
+				String timestamp=matcher.group(0);
+				String password2=MD5.MD5Encode(timestamp+password,"US-ASCII");
+				writeLine("APOP "+username+","+password2);
+				if(!checkLine()) return false;
+				break;
+		}
+		return true;
+	}
+	boolean quit()
+	{
+		writeLine("QUIT");
+		return checkLine();
+	}
+	boolean rset()
+	{
+		writeLine("RSET");
+		return checkLine();
+	}
+	boolean noop()
+	{
+		writeLine("NOOP");
+		return checkLine();
+	}
+	boolean dele(int msg)
+	{
+		writeLine("DELE "+msg);
+		return checkLine();
+	}
+	List<Integer> stat()
+	{
+		writeLine("STAT");
+		if(!checkLine()) return null;
+		String[] strs=lastLine.split(" ");
+		List<Integer> list=new ArrayList<>();
+		list.add(Integer.parseInt(strs[1]));
+		list.add(Integer.parseInt(strs[2]));
+		return list;
+	}
+	List<List<Integer>> list()
+	{
+		writeLine("LIST");
+		String[] lines=readLines().split("\r\n"),strs=lines[0].split(" ");
+		if(!OK.equals(strs[0]))
+			return null;
+		List<List<Integer>> list=new ArrayList<>();
+		for(int i=1;i<lines.length;i++)
+		{
+			strs=lines[i].split(" ");
+			List<Integer> list2=new ArrayList<>();
+			list2.add(Integer.parseInt(strs[0]));
+			list2.add(Integer.parseInt(strs[1]));
+			list.add(list2);
+		}
+		return list;
+	}
+	int list(int msg)
+	{
+		writeLine("LIST "+msg);
+		if(!checkLine()) return -1;
+		String[] strs=lastLine.split(" ");
+		return Integer.parseInt(strs[2]);
+	}
+	String uidl(int msg)
+	{
+		writeLine("UIDL "+msg);
+		if(!checkLine()) return null;
+		String[] strs=lastLine.split(" ");
+		return strs[2];
+	}
+	String retr(int msg)
+	{
+		writeLine("RETR "+msg);
+		String lines=readLines();
+		int index=lines.indexOf("\r\n");
+		String line1=lines.substring(0,index),rest=lines.substring(index+2);
+		if(OK.equals(line1.split(" ")[0]))
+			return rest;
+		else
+			return null;
+	}
+	String top(long msg,long n)
+	{
+		writeLine("TOP "+msg+" "+n);
+		String lines=readLines();
+		int index=lines.indexOf("\r\n");
+		String line1=lines.substring(0,index),rest=lines.substring(index+2);
+		if(OK.equals(line1.split(" ")[0]))
+			return rest;
+		else
+			return null;
+	}
+}
+
+---------- END src/mail/POP3.java ----------
+
+---------- BEGIN src/mail/SMTP.java ----------
+package mail;
+
+import java.io.*;
+import java.net.*;
+import java.nio.charset.*;
+import java.util.*;
+class SMTP
+{
+	private Socket socket;
+	private Scanner sc;
+	private PrintWriter pw;
+	private String lastLine;
+
+	boolean connect(InetAddress inetAddress,int port)
+	{
+		disconnect();
+		try
+		{
+			socket=new Socket(inetAddress,port);
+			sc=new Scanner(new BufferedInputStream(socket.getInputStream()));
+			pw=new PrintWriter(new BufferedOutputStream(socket.getOutputStream()));
+			if(checkLine()==220) return true;
+			else
+			{
+				disconnect();
+				return false;
+			}
+		}
+		catch(Exception e)
+		{
+			disconnect();
+			return false;
+		}
+	}
+	void disconnect()
+	{
+		try
+		{
+			if(sc!=null)
+				sc.close();
+			if(pw!=null)
+			{
+				pw.flush();
+				pw.close();
+			}
+			if(socket!=null)
+				socket.close();
+		}
+		catch(Exception e){}
+	}
+	private int checkLine()
+	{
+		lastLine=sc.nextLine();
+		System.err.println(lastLine);
+		return Integer.parseInt(lastLine.split(" ")[0]);
+	}
+	private void writeLines(String str)
+	{
+		String[] lines=str.split("\r?\n");
+		for(String line:lines)
+		{
+			if(".".equals(line))
+				pw.print(".");
+			pw.println(line);
+		}
+		pw.println(".");
+		pw.flush();
+	}
+	private void writeLine(String str)
+	{
+		pw.println(str);
+		pw.flush();
+	}
+	boolean helo()
+	{
+		writeLine("HELO "+"muzhik");
+		return checkLine()==250;
+	}
+	boolean login(String username,String password)
+	{
+		String username2=Base64.getEncoder().encodeToString(username.getBytes(StandardCharsets.US_ASCII)),
+			password2=Base64.getEncoder().encodeToString(password.getBytes(StandardCharsets.US_ASCII));
+		writeLine("AUTH LOGIN");
+		if(checkLine()!=334) return false;
+		writeLine(username2);
+		if(checkLine()!=334) return false;
+		writeLine(password2);
+		return checkLine()==235;
+	}
+	boolean quit()
+	{
+		writeLine("QUIT");
+		return checkLine()==221;
+	}
+	boolean mailFrom(String address)
+	{
+		writeLine("MAIL FROM:<"+address+">");
+		return checkLine()==250;
+	}
+	boolean rcptTo(String address)
+	{
+		writeLine("RCPT TO:<"+address+">");
+		int value=checkLine();
+		return value==250||value==251;
+	}
+	String data(String data)
+	{
+		writeLine("DATA");
+		if(checkLine()!=354) return null;
+		writeLines(data);
+		if(checkLine()==250)
+		{
+			String[] strs=lastLine.split(" ");
+			return strs[strs.length-1];
+		}
+		else
+			return null;
+	}
+	boolean rset()
+	{
+		writeLine("RSET");
+		return checkLine()==250;
+	}
+	boolean noop()
+	{
+		writeLine("NOOP");
+		return checkLine()==250;
+	}
+	List<String> ehlo(String name)
+	{
+		writeLine("EHLO "+name);
+		List<String> list=new ArrayList<>();
+		while(true)
+		{
+			String line=sc.nextLine();
+			String[] strs=line.split("-");
+			if(strs.length==2)
+			{
+				if(Integer.parseInt(strs[0])!=250) return null;
+				list.add(strs[1]);
+			}
+			else if(strs.length==1)
+			{
+				int idx=line.indexOf(" ");
+				if(Integer.parseInt(line.substring(0,idx))!=250) return null;
+				list.add(line.substring(idx+1));
+				break;
+			}
+			else
+				return null;
+		}
+		return list;
+	}
+	boolean vrfy(String address)
+	{
+		writeLine("VRFY "+address);
+		return checkLine()/100==2;
+	}
+}
+
+---------- END src/mail/SMTP.java ----------
+
+---------- BEGIN src/mail/ToolBox.java ----------
+package mail;
+
+import java.io.*;
+import java.sql.*;
+import java.util.*;
+
+import common.*;
+import database.*;
+public class ToolBox
+{
+	public static int edit(Integer id,Account account,Mail mail)
+	{
+		try
+		{
+			StringBuilder sb=new StringBuilder();
+			for(String receiver:mail.receivers)
+				sb.append(receiver).append(";");
+			if(sb.length()>0)
+				sb.deleteCharAt(sb.length()-1);
+			if(id==null)
+			{
+				int newid=CRUD.insertMail(account!=null?account.username:null,"D",mail.date!=null?new Timestamp(mail.date.getTime()):null,null,mail.sender,sb.length()>0?sb.toString():null,mail.subject);
+				mail.store(new File(Shared.MAILROOT+newid+".eml"));
+				return newid;
+			}
+			else
+			{
+				if(!"D".equals(CRUD.selectMail(id).values.get(0).get("status")))
+					return -1;
+				if(CRUD.updateMail(id,account!=null?account.username:null,"D",mail.date!=null?new Timestamp(mail.date.getTime()):null,null,mail.sender,sb.length()>0?sb.toString():null,mail.subject))
+				{
+					mail.store(new File(Shared.MAILROOT+id+".eml"));
+					return id;
+				}
+				else
+					return -1;
+			}
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+			return -1;
+		}
+	}
+	public static boolean send(int id)
+	{
+		try
+		{
+			boolean flag=false;
+			SMTP smtp=new SMTP();
+			Mail mail=new Mail(new File(Shared.MAILROOT+id+".eml"));
+			Result result;
+			result=CRUD.selectMail(id);
+			Map<String,Object> map=result.values.get(0);
+			if(!"D".equals(map.get("status")))
+				return false;
+			Account account=Account.getByName((String)map.get("username"));
+			if(!smtp.connect(account.smtpAddress,account.smtpPort))
+			{
+				System.err.println("Connection failed!");
+				return false;
+			}
+			for(String login:smtp.ehlo("muzhik"))
+			{
+				if(login.contains("AUTH"))
+				{
+					flag=true;
+					break;
+				}
+			}
+			if(!flag)
+			{
+				System.err.println("SMTP server does not support plain text login!");
+				return false;
+			}
+			if(!smtp.login(account.username,account.password))
+			{
+				if(!smtp.login(account.username.split("@")[0],account.password))
+				{
+					System.err.println("Login failed!");
+					return false;
+				}
+			}
+			if(!smtp.mailFrom(mail.sender)) return false;
+			flag=false;
+			for(String receiver:mail.receivers)
+				flag|=smtp.rcptTo(receiver);
+			if(!flag)
+			{
+				System.err.println("Relay not allowed!");
+				return false;
+			}
+			String uid=smtp.data(mail.toString());
+			if(uid==null)
+			{
+				System.err.println("Sending data failed!");
+				return false;
+			}
+			StringBuilder sb=new StringBuilder();
+			for(String receiver:mail.receivers)
+				sb.append(receiver).append(";");
+			if(sb.length()>0)
+				sb.deleteCharAt(sb.length()-1);
+			if(!CRUD.updateMail(id,account.username,"S",mail.date!=null?new Timestamp(mail.date.getTime()):null,uid,mail.sender,sb.length()>0?sb.toString():null,mail.subject))
+				return false;
+			smtp.quit();
+			smtp.disconnect();
+			return true;
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+			return false;
+		}
+	}
+	public static boolean send(Account account,Mail mail)
+	{
+		return send(edit(null,account,mail));
+	}
+	public static boolean receive(Account account)
+	{
+		try
+		{
+			POP3 pop3=new POP3();
+			if(!pop3.connect(account.pop3Address,account.pop3Port))
+			{
+				System.err.println("Connection failed!");
+				return false;
+			}
+			if(!pop3.login(account.username,account.password,"PLAIN"))
+			{
+				System.err.println("Login failed!");
+				return false;
+			}
+			List<List<Integer>> mailList=pop3.list();
+			for(List<Integer> mail:mailList)
+			{
+				int no=mail.get(0);
+				String msg=pop3.retr(no);
+				Mail m=new Mail(msg);
+				String uid=pop3.uidl(no);
+				int id;
+				Result result=CRUD.selectMail(account.username,"R",uid);
+				if(result.rows>0)
+					id=(int)result.values.get(0).get("id");
+				else
+				{
+					StringBuilder sb=new StringBuilder();
+					for(String receiver:m.receivers)
+						sb.append(receiver).append(";");
+					if(sb.length()>0)
+						sb.deleteCharAt(sb.length()-1);
+					id=CRUD.insertMail(account.username,"R",new Timestamp(m.date.getTime()),uid,m.sender,sb.length()>0?sb.toString():null,m.subject);
+				}
+				if(id<=0)
+					return false;
+				m.store(new File(Shared.MAILROOT+id+".eml"));
+				pop3.dele(no);
+			}
+			pop3.quit();
+			pop3.disconnect();
+			return true;
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+			return false;
+		}
+	}
+	public static boolean delete(int id)
+	{
+		if(CRUD.deleteMail(id))
+			return (new File(Shared.MAILROOT+id+".eml")).delete();
+		else
+			return false;
+	}
+	public static Mail take(int id)
+	{
+		return new Mail(new File(Shared.MAILROOT+id+".eml"));
+	}
+}
+
+---------- END src/mail/ToolBox.java ----------
+
+---------- BEGIN src/webui/http/worker/AccountAdmin.java ----------
+package webui.http.worker;
+
+import java.io.*;
+import java.util.*;
+
+import common.*;
+import database.*;
+import webui.http.*;
+public class AccountAdmin extends Handler
+{
+	@Override
+	public void doGet(Request request,Response response)
+	{
+		PrintWriter pw=response.getWriter();
+		response.setContentType("application/json");
+		List<Map<String,Object>> list=CRUD.selectUser().values;
+		if("select".equals(request.getParameter("operation")))
+		{
+			String username=request.getParameter("username");
+			if(!username.isEmpty())
+			{
+				for(Map<String,Object> map:list)
+				{
+					if(username.equals((map).get("username")))
+					{
+						List<Map<String,Object>> l=new ArrayList<>();
+						l.add(map);
+						pw.write(new JSON(l).toString());
+						break;
+					}
+				}
+			}
+			else
+				pw.write(new JSON(list).toString());
+		}
+		else
+		{
+			List<String> usernames=new ArrayList<>();
+			for(Map<String,Object> map:list)
+				usernames.add((String)map.get("username"));
+			pw.write(new JSON(usernames).toString());
+		}
+		pw.flush();
+		pw.close();
+	}
+	@Override
+	public void doPost(Request request,Response response)
+	{
+		PrintWriter pw=response.getWriter();
+		String username,password,smtp,pop3,pusername;
+		username=request.getParameter("username");
+		password=request.getParameter("password");
+		smtp=request.getParameter("smtp");
+		pop3=request.getParameter("pop3");
+		pusername=request.getParameter("pusername");
+		boolean success=false;
+		switch(request.getParameter("operation"))
+		{
+			case "insert":
+				username=username.isEmpty()?null:username;
+				password=password.isEmpty()?null:password;
+				smtp=smtp.isEmpty()?null:smtp;
+				pop3=pop3.isEmpty()?null:pop3;
+				success=CRUD.insertUser(username,password,smtp,pop3);
+				break;
+			case "delete":
+				pusername=pusername.isEmpty()?null:pusername;
+				success=CRUD.deleteUser(pusername);
+				break;
+			case "update":
+				username=username.isEmpty()?null:username;
+				password=password.isEmpty()?null:password;
+				smtp=smtp.isEmpty()?null:smtp;
+				pop3=pop3.isEmpty()?null:pop3;
+				pusername=pusername.isEmpty()?null:pusername;
+				success=CRUD.updateUser(pusername,username,password,smtp,pop3);
+				break;
+		}
+		List<Boolean> successes=new ArrayList<>();
+		successes.add(success);
+		pw.write(new JSON(successes).toString());
+		pw.flush();
+		pw.close();
+	}
+}
+
+---------- END src/webui/http/worker/AccountAdmin.java ----------
+
+---------- BEGIN src/webui/http/worker/Download.java ----------
+package webui.http.worker;
+
+import java.io.*;
+
+import mail.*;
+import webui.http.*;
+public class Download extends Handler
+{
+	@Override
+	public void doGet(Request request,Response response) throws HTTPException
+	{
+		OutputStream os=response.getStream();
+		response.setContentType("application/octet-stream");
+		Mail mail=ToolBox.take(Integer.parseInt(request.getParameter("id")));
+		String aid=request.getParameter("aid");
+		try
+		{
+			if(aid!=null&&!aid.isBlank())
+			{
+				mail=mail.attachments.get(Integer.parseInt(aid));
+				response.setHeader("content-disposition","attachment;filename="+mail.subject);
+				os.write(mail.contentb);
+			}
+			else
+			{
+				response.setHeader("content-disposition","attachment;filename="+mail.subject+".eml");
+				os.write(mail.toString().getBytes());
+			}
+			os.flush();
+			os.close();
+		}
+		catch(IOException ioe)
+		{
+			ioe.printStackTrace();
+		}
+	}
+}
+
+---------- END src/webui/http/worker/Download.java ----------
+
+---------- BEGIN src/webui/http/worker/MailAdmin.java ----------
+package webui.http.worker;
+
+import java.io.*;
+import java.util.*;
+import java.util.regex.*;
+
+import common.*;
+import database.*;
+import mail.*;
+import webui.http.*;
+public class MailAdmin extends Handler
+{
+	@Override
+	public void doGet(Request request,Response response) throws HTTPException
+	{
+		PrintWriter pw=response.getWriter();
+		response.setContentType("application/json");
+		List<Map<String,Object>> list;
+		switch(request.getParameter("operation"))
+		{
+			case "select":
+				String username=request.getParameter("username"),status=request.getParameter("status");
+				list=CRUD.selectMail(username.isEmpty()?null:username,status.isEmpty()?null:status,null).values;
+				pw.write(new JSON(list).toString());
+				break;
+			case "view":
+				Mail mail=ToolBox.take(Integer.parseInt(request.getParameter("id")));
+				Map<String,Object> map=new HashMap<>();
+				map.put("sender",mail.sender);
+				StringBuilder sb=new StringBuilder();
+				for(String receiver:mail.receivers)
+					sb.append(receiver).append(";");
+				if(sb.length()>0)
+					sb.deleteCharAt(sb.length()-1);
+				map.put("receivers",sb.toString());
+				map.put("subject",mail.subject);
+				map.put("date",mail.date.toString());
+				List<String> attachments=new ArrayList<>();
+				if(mail.attachments!=null)
+					for(Mail m:mail.attachments)
+						attachments.add(m.subject);
+				map.put("attachments",attachments);
+				map.put("content",(mail.content));
+				map.put("raw",mail.toString());
+				pw.write(new JSON(map).toString());
+				break;
+		}
+		pw.flush();
+		pw.close();
+	}
+	@Override
+	public void doPost(Request request,Response response) throws HTTPException
+	{
+		PrintWriter pw=response.getWriter();
+		List<Thread> threads=new ArrayList<>();
+		List<Boolean> successes=new ArrayList<>();
+		boolean flag=false;
+		switch(request.getParameter("operation"))
+		{
+			case "retrieve":
+				String username=request.getParameter("username");
+				List<String> usernames=new ArrayList<>();
+				if(username.isEmpty())
+				{
+					for(Map<String,Object> map : CRUD.selectUser().values)
+						usernames.add((String)map.get("username"));
+				}
+				else
+					usernames.add(username);
+				for(int i=0;i<usernames.size();i++)
+				{
+					successes.add(false);
+					Map<String,Object> map=CRUD.selectUser().values.get(i);
+					final int j=i;
+					threads.add(new Thread(()->{
+						successes.set(j,ToolBox.receive(Account.getByName((String)map.get("username"))));
+					}));
+				}
+				for(Thread thread:threads)
+					//Shared.THREAD_POOL.execute(thread);
+					thread.start();
+				try
+				{
+					for(Thread thread:threads)
+						thread.join();
+				}
+				catch(InterruptedException e){}
+				break;
+			case "send":
+				flag=true;
+			case "update":
+				Mail mail=new Mail();
+				Matcher matcher;
+				matcher=Mail.pattern.matcher(request.getParameter("sender"));
+				if(matcher.find())
+					mail.sender=matcher.group(0);
+				mail.receivers=new ArrayList<>();
+				matcher=Mail.pattern.matcher(request.getParameter("receivers"));
+				while(matcher.find())
+					mail.receivers.add(matcher.group(0));
+				mail.subject=request.getParameter("subject");
+				mail.date=new Date();
+				mail.content=request.getParameter("content");
+				mail.compose();
+				String id=request.getParameter("id");
+				Integer i=id.isEmpty()?null:Integer.parseInt(id);
+				if(!flag)
+					successes.add(ToolBox.edit(i,Account.getByName(request.getParameter("username")),mail)>0);
+				else if(i!=null)
+					successes.add(ToolBox.send(i));
+				else
+					successes.add(ToolBox.send(Account.getByName(request.getParameter("username")),mail));
+
+				break;
+			case "delete":
+				successes.add(ToolBox.delete(Integer.parseInt(request.getParameter("id"))));
+				break;
+		}
+		pw.write(new JSON(successes).toString());
+		pw.flush();
+		pw.close();
+	}
+}
+
+---------- END src/webui/http/worker/MailAdmin.java ----------
+
+---------- BEGIN src/webui/http/worker/Upload.java ----------
+package webui.http.worker;
+
+import webui.http.*;
+public class Upload extends Handler
+{
+}
+
+---------- END src/webui/http/worker/Upload.java ----------
+
+---------- BEGIN src/webui/http/FileManager.java ----------
+package webui.http;
+
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+
+import common.*;
+
+class FileManager extends Handler
+{
+	private Map<String,Object> env;
+	@Override
+	public void init()
+	{
+		env=env();
+	}
+	@Override
+	public void doGet(Request request,Response response) throws HTTPException
+	{
+		String URI=request.getRequestURI();
+		File file=new File(env.get("webroot")+URI);
+		checkFile(file,"r");
+		String extension="";
+		int index=URI.lastIndexOf(".");
+		if(index>=0)
+			extension=URI.substring(index+1);
+		String mime=MIME.get(extension);
+		response.setContentType(mime!=null?mime:MIME.get(""));
+		try
+		{
+			BufferedInputStream bis=new BufferedInputStream(new FileInputStream(file));
+			response.setHeader("content-length",file.length()+"");
+			if(!"HEAD".equals(request.getMethod()))
+				Pipe.pipe(bis,response.getStream());
+			bis.close();
+
+		}
+		catch(IOException ioe)
+		{
+			ioe.printStackTrace();
+			throw new HTTPException(500,ioe);
+		}
+	}
+	@Override
+	public void doPost(Request request,Response response) throws HTTPException
+	{
+		doGet(request,response);
+	}
+	private void checkFile(File file,String mode) throws HTTPException
+	{
+		// Check for file permission or not found error.
+		if(file.isDirectory()||!Paths.get(file.getAbsolutePath()).normalize().startsWith(Paths.get(new File((String)(env.get("webroot"))).getAbsolutePath()).normalize()))
+		{
+			throw new HTTPException(403,"You have no permission to access "+file.getName()+" on this server");
+		}
+		if((mode.contains("e")||mode.contains("r")||mode.contains("w"))&&!file.exists())
+		{
+			throw new HTTPException(404,"Unable to find "+file.getName()+" on this server");
+		}
+		if(mode.contains("r")&&!file.canRead()||mode.contains("w")&&!file.canWrite())
+		{
+			throw new HTTPException(403,"You have no permission to access "+file.getName()+" on this server");
+		}
+	}
+	static final Map<String,String> MIME=new HashMap<>()
+	{
+		{
+			put("","application/octet-stream");
+			put("txt","text/plain");
+			put("html","text/html; charset=utf-8");
+			put("css","text/css");
+			put("js","application/x-javascript");
+			put("json","application/json");
+			put("jpg","image/jpeg");
+			put("png","image/png");
+			put("bmp","image/bmp");
+			put("gif","image/gif");
+			put("svg","image/svg+xml");
+			put("mp3","audio/mpeg");
+			put("mp4","video/mp4");
+			put("zip","application/zip");
+		}
+	};
+}
+
+---------- END src/webui/http/FileManager.java ----------
+
+---------- BEGIN src/webui/http/Handler.java ----------
+package webui.http;
+
+import java.util.*;
+public abstract class Handler
+{
+	private Map<String,Object> env;
+	void env(Map<String,Object> env)
+	{
+		this.env=env;
+	}
+	protected Map<String,Object> env()
+	{
+		return env;
+	}
+	public void init() throws HTTPException
+	{
+	}
+	public void doGet(Request request,Response response) throws HTTPException
+	{
+		doDefault(request,response);
+	}
+	public void doPost(Request request,Response response) throws HTTPException
+	{
+		doDefault(request,response);
+	}
+	void doDefault(Request request,Response response) throws HTTPException
+	{
+	}
+}
+
+---------- END src/webui/http/Handler.java ----------
+
+---------- BEGIN src/webui/http/HTTPContainer.java ----------
+package webui.http;
+
+import common.*;
+import webui.*;
+
+import java.net.*;
+import java.util.*;
+
+public class HTTPContainer extends Container
+{
+	private Request request;
+	private Response response;
+	@Override
+	public void process(Socket socket) throws Exception
+	{
+		response=new Response(socket);
+		try
+		{
+			request=new Request(socket);
+			request.parse();
+			if(Shared.AUTH!=null)
+			{
+				String authorization=request.getHeader("authorization");
+				if(authorization==null||!authorization.substring(authorization.indexOf(' ')+1).equals(Shared.AUTH))
+				{
+					response.setHeader("www-authenticate","Basic realm=\"Connecting to Muzhik\"");
+					throw new HTTPException(401);
+				}
+			}
+			Class<? extends Handler> servletClass=FileManager.class;
+			Map<String,String> exe=(Map<String, String>)env.get("exe");
+			if(exe!=null)
+			{
+				String className=exe.get(request.getRequestURI());
+				if(className!=null)
+					servletClass=(Class<? extends Handler>)Class.forName(this.getClass().getPackageName()+".worker."+className);
+			}
+			Handler handler=servletClass.newInstance();
+			handler.env(env);
+			handler.init();
+			switch(request.getMethod())
+			{
+				case "GET":
+				case "HEAD":
+					handler.doGet(request,response);
+					break;
+				case "POST":
+					handler.doPost(request,response);
+					break;
+			}
+			throw new HTTPException(200);
+		}
+		catch(HTTPException he)
+		{
+			response.commit(he);
+		}
+	}
+}
+
+---------- END src/webui/http/HTTPContainer.java ----------
+
+---------- BEGIN src/webui/http/HTTPException.java ----------
+package webui.http;
+
+import java.io.*;
+
+public class HTTPException extends Exception
+{
+	private final int code;
+	private final String description;
+	private String message="";
+	public HTTPException(int code)
+	{
+		this.code=code;
+		switch(code)
+		{
+			case 100:
+				description="Continue";
+				break;
+			case 101:
+				description="switch";
+				break;
+			case 102:
+				description="Processing";
+				break;
+			case 200:
+				description="OK";
+				break;
+			case 201:
+				description="Created";
+				break;
+			case 202:
+				description="Accepted";
+				break;
+			case 203:
+				description="Non-Authoritative Information";
+				break;
+			case 204:
+				description="No Contact";
+				break;
+			case 205:
+				description="Reset Content";
+				break;
+			case 206:
+				description="Partial Content";
+				break;
+			case 207:
+				description="Multi-Status";
+				break;
+			case 300:
+				description="Multiple Choices";
+				break;
+			case 301:
+				description="Moved permanently";
+				break;
+			case 302:
+				description="Move temporarily";
+				break;
+			case 303:
+				description="See Other";
+				break;
+			case 304:
+				description="Not Modified";
+				break;
+			case 305:
+				description="Use Proxy";
+				break;
+			case 306:
+				description="Switch Proxy";
+				break;
+			case 307:
+				description="Temporary Redirect";
+				break;
+			case 400:
+				description="Bad Request";
+				break;
+			case 401:
+				description="Unauthorized";
+				break;
+			case 402:
+				description="Payment Required";
+				break;
+			case 403:
+				description="Forbidden";
+				break;
+			case 404:
+				description="Not Found";
+				break;
+			case 405:
+				description="Method Not Allowed";
+				break;
+			case 406:
+				description="Not Acceptable";
+				break;
+			case 407:
+				description="Proxy Authentication Required";
+				break;
+			case 408:
+				description="Request Timeout";
+				break;
+			case 409:
+				description="Conflict";
+				break;
+			case 410:
+				description="Gone";
+				break;
+			case 411:
+				description="Length Required";
+				break;
+			case 412:
+				description="Precondition Failed";
+				break;
+			case 413:
+				description="Request Entity Too Large";
+				break;
+			case 414:
+				description="Request-URL Too Long";
+				break;
+			case 415:
+				description="Unsupported Media Type";
+				break;
+			case 416:
+				description="Requested Range Not Satisfiable";
+				break;
+			case 417:
+				description="Expectation Failed";
+				break;
+			case 421:
+				description="too many connections";
+				break;
+			case 422:
+				description="Unprocessable Entity";
+				break;
+			case 423:
+				description="Locked";
+				break;
+			case 424:
+				description="Failed Dependency";
+				break;
+			case 425:
+				description="Unordered Collection";
+				break;
+			case 426:
+				description="Upgrade Required";
+				break;
+			case 449:
+				description="Retry With";
+				break;
+			case 451:
+				description="Unavaliable For Legal Reasons";
+				break;
+			case 500:
+				description="Internal Server Error";
+				break;
+			case 501:
+				description="Not Implemented";
+				break;
+			case 502:
+				description="Bad Gateway";
+				break;
+			case 503:
+				description="Service Unavailable";
+				break;
+			case 504:
+				description="Gateway Timeout";
+				break;
+			case 505:
+				description="HTTP Version Not Supported";
+				break;
+			case 506:
+				description="Variant Also Negotiates";
+				break;
+			case 507:
+				description="Insufficient Storage";
+				break;
+			case 509:
+				description="Bandwidth Limit Exceeded";
+				break;
+			case 510:
+				description="Not Extended";
+				break;
+			case 600:
+				description="Unparseable Response Headers";
+				break;
+
+			default:
+				description="";
+		}
+	}
+	public HTTPException(int code,String message)
+	{
+		this(code);
+		this.message=message;
+	}
+	public HTTPException(int code,Exception e)
+	{
+		this(code);
+		if(e instanceof HTTPException)
+		{
+			message=((HTTPException)e).message;
+		}
+		else
+		{
+			StringWriter sw=new StringWriter();
+			e.printStackTrace(new PrintWriter(sw));
+			message=sw.toString();
+			try
+			{
+				sw.close();
+			}
+			catch(IOException ioe)
+			{
+				message+="\n"+ioe.getMessage();
+			}
+		}
+	}
+	int code()
+	{
+		return code;
+	}
+	String description()
+	{
+		return description;
+	}
+	String message()
+	{
+		return message;
+	}
+}
+
+---------- END src/webui/http/HTTPException.java ----------
+
+---------- BEGIN src/webui/http/Request.java ----------
+package webui.http;
+
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.regex.*;
+
+public class Request
+{
+	private String requestMethod="", URI="", queryString="";
+	private final Hashtable<String,String> headers=new Hashtable<>();
+	private final Hashtable<String,Object> parameters=new Hashtable<>();
+	private final BufferedInputStream bis;
+	private RequestInputStream rs;
+	Request(Socket s) throws HTTPException
+	{
+		try
+		{
+			bis=new BufferedInputStream(s.getInputStream());
+		}
+		catch(IOException ioe)
+		{
+			throw new HTTPException(400,ioe);
+		}
+	}
+
+	void parse() throws HTTPException
+	{
+		try
+		{
+			queryString="";
+			headers.clear();
+			parameters.clear();
+			rs=new RequestInputStream(bis);
+			//Wait for HTTP request from the connection
+			String line;
+			line=rs.readLine();
+			if(line==null||"".equals(line))
+			{
+				throw new HTTPException(400);
+			}
+			//Log client's requests.
+			//System.err.println("Request: "+line);
+			String tokens[]=line.split(" ");
+			if(!"HTTP".equalsIgnoreCase(tokens[2].substring(0,4)))
+				throw new HTTPException(400);
+			requestMethod=tokens[0].toUpperCase();
+			//Only support GET or POST
+			if(!("GET".equals(requestMethod)||"POST".equals(requestMethod)||"HEAD".equals(requestMethod)||"CONNECT".equals(requestMethod)))
+			{
+				throw new HTTPException(400,"The web server only understands GET or POST requests");
+			}
+			Matcher m=Pattern.compile("^(([0-9A-Za-z]+):\\/\\/([^\\/]+))?([^?]*)(\\?(.*))?$").matcher(URI=tokens[1]);
+			if(m.find())
+			{
+				URI=m.group(4);
+				queryString=m.group(6);
+				parseQueryString(queryString,true);
+			}
+
+			//Read and parse the rest of the HTTP headers
+			line=rs.readLine();
+			while(!"".equals(line))
+			{
+				int index=line.indexOf(":");
+				if(index<0)
+				{
+					break;
+				}
+				else
+				{
+					headers.put(line.substring(0,index).toLowerCase(),line.substring(index+1).trim());
+				}
+				line=rs.readLine();
+			}
+
+			//read data if POST
+			if("POST".equals(requestMethod))
+			{
+				int contentLength=getContentLength();
+				byte[] bytes=new byte[contentLength];
+				rs.read(bytes,0,contentLength);
+				char[] chars=new char[contentLength];
+				for(int i=0;i<contentLength;i++)
+					chars[i]=(char)bytes[i];
+				line=new String(chars);
+				String contentType=getContentType();
+				if(contentType.startsWith("multipart/form-data"))
+				{
+					String boundary="--"+contentType.split("=")[1];
+					Pattern p=Pattern.compile("Content-Disposition: ?([^ ;]*); ?name=\"([^\"]*)\"(; ?filename=\"([^\"]*)\")? ?\\r?\\n( ?Content-Type: ?([^ \\r\\n]*) ?\\r?\\n)?\\r?\\n(.*)\\r?\\n"
+	                      ,Pattern.MULTILINE|Pattern.DOTALL);
+					for(String zone:line.split(boundary))
+					{
+						m=p.matcher(zone);
+						if(m.find())
+						{
+							BinaryParameter bp=new BinaryParameter();
+							bp.attr.put("Content-Disposition",m.group(1));
+							bp.attr.put("name",m.group(2));
+							if(m.group(4)!=null)
+								bp.attr.put("filename",m.group(4));
+							if(m.group(6)!=null)
+								bp.attr.put("Content-Type",m.group(6));
+							char[] data=m.group(7).toCharArray();
+							bp.data=new byte[data.length];
+							for(int i=0;i<data.length;i++)
+							{
+								bp.data[i]=(byte)data[i];
+							}
+							if(bp.attr.get("name")!=null&&!"".equals(bp.attr.get("name")))
+								parameters.put(bp.attr.get("name"),bp);
+						}
+					}
+				}
+				else
+				{
+					//application/x-www-form-urlencoded
+					//text/plain
+					parseQueryString(line,contentType.startsWith("application/x-www-form-urlencoded"));
+				}
+			}
+		}
+		catch(IOException ioe)
+		{
+			throw new HTTPException(400,ioe);
+		}
+	}
+
+	private String hex2char(String str)
+	{
+		str=str.replace('+',' ');
+		StringBuilder sb=new StringBuilder();
+		Matcher m=Pattern.compile("%[0-9A-F]{2}").matcher(str);
+		int i=0,start;
+		while(m.find())
+		{
+			start=m.start();
+			sb.append(str.substring(i,start));
+			i=start+3;
+			sb.append((char)Integer.parseInt(str.substring(start+1,i),16));
+		}
+		sb.append(str.substring(i));
+		return sb.toString();
+	}
+
+	private void parseQueryString(String queryString,boolean decode) throws UnsupportedEncodingException
+	{
+		if(queryString==null||"".equals(queryString))
+			return;
+		if(queryString.charAt(0)=='?')
+			queryString=queryString.substring(1);
+		for(String query : queryString.split("&"))
+		{
+			String[] keys=query.split("=");
+			String key=keys[0], value="";
+			if(keys.length>1)
+			{
+				value=keys[1];
+			}
+			if(!"".equals(key))
+			{
+				if(decode)
+				{
+					key=URLDecoder.decode(key,"UTF-8");
+					value=URLDecoder.decode(value,"UTF-8");
+				}
+				else
+				{
+					key=key.replace('+',' ');
+					value=value.replace('+',' ');
+				}
+				parameters.put(key,value);
+			}
+		}
+	}
+
+	public String getMethod()
+	{
+		return requestMethod;
+	}
+	public String getRequestURI()
+	{
+		return URI;
+	}
+	public String getContentType()
+	{
+		return headers.get("content-type");
+	}
+	public int getContentLength()
+	{
+		return Integer.parseInt(headers.get("content-length"));
+	}
+	public String getParameter(String name)
+	{
+		try
+		{
+			return parameters.get(name).toString();
+		}
+		catch(RuntimeException re)
+		{
+			return null;
+		}
+	}
+	public byte[] getBinaryParameter(String name)
+	{
+		try
+		{
+			return ((BinaryParameter)parameters.get(name)).data;
+		}
+		catch(RuntimeException re)
+		{
+			return null;
+		}
+	}
+	public Enumeration<String> getParameterNames()
+	{
+		return parameters.keys();
+	}
+	public String getHeader(String name)
+	{
+		return headers.get(name.toLowerCase());
+	}
+	public Enumeration<String> getHeaderNames()
+	{
+		return headers.keys();
+	}
+	public String getQueryString()
+	{
+		return queryString;
+	}
+	public BufferedInputStream getStream()
+	{
+		return bis;
+	}
+	public byte[] getReadData()
+	{
+		return rs.getReadData();
+	}
+	public class BinaryParameter
+	{
+		public final Map<String,String> attr=new HashMap<>();
+		public byte[] data;
+		@Override
+		public String toString()
+		{
+			return new String(data);
+		}
+	}
+	private class RequestInputStream extends InputStream
+	{
+		private final InputStream is;
+		private final ByteArrayOutputStream baos=new ByteArrayOutputStream();
+		RequestInputStream(InputStream is)
+		{
+			this.is=is;
+		}
+		@Override
+		public int read() throws IOException
+		{
+			int i=is.read();
+			baos.write(i);
+			return i;
+		}
+		String readLine() throws IOException
+		{
+			StringWriter sw=new StringWriter();
+			int i,max=100000000;
+			label:
+			while(true)
+			{
+				while((i=read())!=(int)'\r')
+				{
+					if(--max<=0||i==-1)
+						break label;
+					sw.write(i);
+				}
+				if((i=read())=='\n'||i==-1)
+					break;
+				sw.write((int)'\r');
+				sw.write(i);
+			}
+			return sw.toString();
+		}
+		byte[] getReadData()
+		{
+			byte[] readData=baos.toByteArray();
+			baos.reset();
+			return readData;
+		}
+	}
+}
+
+---------- END src/webui/http/Request.java ----------
+
+---------- BEGIN src/webui/http/Response.java ----------
+package webui.http;
+
+import java.io.*;
+import java.net.*;
+import java.text.*;
+import java.util.*;
+import java.util.regex.*;
+
+public class Response
+{
+	private final Map<String,String> headers=new HashMap<>();
+	private final BufferedOutputStream bos;
+	private final ByteArrayOutputStream baos;
+	private final PrintWriter pw,rpw;
+	private final DataOutputStream dos;
+	private String method;
+	Response(Socket socket) throws IOException
+	{
+		bos=new BufferedOutputStream(socket.getOutputStream());
+		rpw=new PrintWriter(bos);
+		baos=new ByteArrayOutputStream();
+		pw=new PrintWriter(baos);
+		dos=new DataOutputStream(baos);
+		resetHeaders();
+	}
+	public void setHeaders(Map<String,String> newHeaders)
+	{
+		for(String key:newHeaders.keySet())
+		{
+			headers.put(key.toLowerCase(),newHeaders.get(key));
+		}
+	}
+	public void setHeader(final String key,final String value)
+	{
+		setHeaders(new HashMap<>()
+		{
+			{
+				put(key.toLowerCase(),value);
+			}
+		});
+	}
+	public void resetHeaders(Map<String,String> headers)
+	{
+		this.headers.clear();
+		setHeaders(headers);
+	}
+	private void resetHeaders()
+	{
+		resetHeaders(new HashMap<>());
+		setHeader("date",new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz",Locale.US).format(new Date()));
+		setHeader("Access-Control-Allow-Origin","*");
+	}
+	void setMethod(String method)
+	{
+		this.method=method.toUpperCase();
+	}
+	public void setContentType(final String contentType)
+	{
+		setHeader("content-type",contentType);
+	}
+	public PrintWriter getWriter()
+	{
+		return pw;
+	}
+	PrintWriter getRawWriter()
+	{
+		return rpw;
+	}
+	public DataOutputStream getStream()
+	{
+		return dos;
+	}
+	BufferedOutputStream getRawStream()
+	{
+		return bos;
+	}
+	void commit(HTTPException he) throws IOException
+	{
+		int code=he.code();
+		if(code<=0)
+			return;
+		pw.flush();
+		dos.flush();
+		if(code!=200)
+		{
+			if(code==500)
+				resetHeaders();
+			baos.reset();
+		}
+		if(headers.get("content-length")==null)
+			setHeader("content-length",baos.size()+"");
+		rpw.println("HTTP/1.1 "+code+" "+he.description());
+		for(String key:headers.keySet())
+		{
+			rpw.println(capitalize(key)+": "+headers.get(key));
+		}
+		rpw.println();
+		rpw.flush();
+		if(!"HEAD".equals(method))
+		{
+			baos.writeTo(bos);
+			baos.reset();
+			bos.flush();
+		}
+		resetHeaders();
+	}
+	private String capitalize(String str)
+	{
+		String text="0"+((str!=null)?str.trim():"")+"0";
+		String[] words=text.split("[^A-Za-z]+");
+		Matcher m=Pattern.compile("[^A-Za-z]+").matcher(text);
+		int i=1;
+		StringBuilder sb=new StringBuilder();
+		while(m.find())
+		{
+			sb.append(m.group());
+			if(i<words.length)
+			{
+				sb.append(words[i].substring(0,1).toUpperCase());
+				sb.append(words[i].substring(1));
+			}
+			i++;
+		}
+		String result=sb.toString();
+		return result.substring(1,result.length()-1);
+	}
+}
+
+---------- END src/webui/http/Response.java ----------
+
+---------- BEGIN src/webui/Connector.java ----------
+package webui;
+
+import java.net.*;
+class Connector implements Runnable
+{
+	private final Socket socket;
+	private final Container container;
+	Connector(Socket socket,Container container)
+	{
+		this.socket=socket;
+		this.container=container;
+	}
+	@Override
+	public void run()
+	{
+		try
+		{
+			container.process(socket);
+			if(!socket.isClosed())
+				socket.close();
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+		}
+	}
+}
+
+---------- END src/webui/Connector.java ----------
+
+---------- BEGIN src/webui/Container.java ----------
+package webui;
+
+import java.net.*;
+import java.util.*;
+public abstract class Container
+{
+	protected Map<String,Object> env=new HashMap<>();
+	static Container copy(Container container)
+	{
+		try
+		{
+			Class<? extends Container> containerClass=container.getClass();
+			Container newContainer=containerClass.newInstance();
+			newContainer.env.putAll(container.env);
+			return newContainer;
+		}
+		catch(Exception e)
+		{
+			e.printStackTrace();
+			return null;
+		}
+	}
+	public void env(Map<String,Object> env)
+	{
+		this.env.clear();
+		this.env.putAll(env);
+	}
+	public abstract void process(Socket socket) throws Exception;
+}
+
+---------- END src/webui/Container.java ----------
+
+---------- BEGIN src/webui/Listener.java ----------
+package webui;
+
+import java.io.*;
+import java.net.*;
+
+import common.*;
+
+class Listener implements Runnable
+{
+	private final ServerSocket serverSocket;
+	private final Container container;
+	private boolean running;
+	private Thread thread;
+	Listener(ServerSocket serverSocket,Container container)
+	{
+		this.serverSocket=serverSocket;
+		this.container=container;
+		running=true;
+	}
+	void stop()
+	{
+		running=false;
+		try
+		{
+			new Socket(serverSocket.getInetAddress(),serverSocket.getLocalPort());
+			thread.join();
+		}
+		catch(Exception e)
+		{
+			//e.printStackTrace();
+		}
+	}
+	public void run()
+	{
+		Socket socket;
+		thread=Thread.currentThread();
+		while(running)
+		{
+			try
+			{
+				socket=serverSocket.accept();
+				socket.setKeepAlive(true);
+				Shared.THREAD_POOL.execute(new Connector(socket,Container.copy(container)));
+			}
+			catch(Exception e)
+			{
+				e.printStackTrace();
+			}
+		}
+		//executor.shutdownNow();
+		try
+		{
+			serverSocket.close();
+		}
+		catch(IOException ioe)
+		{
+			//ioe.printStackTrace();
+		}
+	}
+}
+
+---------- END src/webui/Listener.java ----------
+
+---------- BEGIN src/webui/Server.java ----------
+package webui;
+
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.concurrent.*;
+
+import common.*;
+public class Server
+{
+	private final Map<ServerSocket,Listener> map=new HashMap<>();
+	public boolean add(String address,Container container)
+	{
+		String[] strs=address.split(":");
+		try
+		{
+			if(strs.length==2)
+				addListener(InetAddress.getByName(strs[0]),Integer.parseInt(strs[1]),container);
+			else if(strs.length==1)
+				addListener(InetAddress.getByName("0.0.0.0"),Integer.parseInt(strs[0]),container);
+			else
+				return false;
+			return true;
+		}
+		catch(Exception e)
+		{
+			return false;
+		}
+	}
+	public boolean remove(String address)
+	{
+		String[] strs=address.split(":");
+		try
+		{
+			if(strs.length==2)
+				removeListener(InetAddress.getByName(strs[0]),Integer.parseInt(strs[1]));
+			else if(strs.length==1)
+				removeListener(InetAddress.getByName("0.0.0.0"),Integer.parseInt(strs[0]));
+			else
+				return false;
+			return true;
+		}
+		catch(Exception e)
+		{
+			return true;
+		}
+	}
+	private void addListener(InetAddress inetAddress,int port,Container container) throws IOException
+	{
+		ServerSocket serverSocket=new ServerSocket(port,50,inetAddress);
+		Listener listener=new Listener(serverSocket,container);
+		map.put(serverSocket,listener);
+		Shared.THREAD_POOL.execute(listener);
+	}
+	private void removeListener(InetAddress inetAddress,int port) throws Exception
+	{
+		for(ServerSocket serverSocket:map.keySet())
+		{
+			if(serverSocket.getInetAddress().equals(inetAddress)&&serverSocket.getLocalPort()==port)
+			{
+				map.get(serverSocket).stop();
+				map.remove(serverSocket);
+				return;
+			}
+		}
+		throw new Exception();
+	}
+}
+
+---------- END src/webui/Server.java ----------
+
+---------- BEGIN src/Main.java ----------
+import java.awt.*;
+import java.io.*;
+import java.net.*;
+import java.nio.charset.*;
+import java.util.*;
+
+import common.*;
+import webui.*;
+import webui.http.*;
+
+public class Main
+{
+    public static void main(String[] args) throws Exception
+    {
+	    Scanner sc=new Scanner(new BufferedInputStream(new FileInputStream(args[0])));
+	    boolean autoOpen=false;
+	    String username=null,password=null;
+	    while(sc.hasNext())
+	    {
+	    	String line=sc.nextLine();
+	    	if(line.isEmpty())
+	    		continue;
+	    	String[] strs=line.split("=");
+	    	switch(strs[0])
+		    {
+			    case "WEBROOT":
+			    	Shared.WEBROOT=strs[1];
+			    	break;
+			    case "WEBADDRESS":
+				    Shared.WEBADDRESS=strs[1];
+				    break;
+			    case "WEBUSERNAME":
+				    username=strs[1];
+				    break;
+			    case "WEBPASSWORD":
+				    password=strs[1];
+				    break;
+			    case "MAILROOT":
+				    Shared.MAILROOT=strs[1];
+				    break;
+			    case "DBDRIVER":
+				    Shared.DBDRIVER=strs[1];
+				    break;
+			    case "DBURL":
+				    Shared.DBURL=strs[1];
+				    break;
+			    case "DBUSERNAME":
+			        Shared.DBUSERNAME=strs[1];
+			        break;
+			    case "DBPASSWORD":
+				    Shared.DBPASSWORD=strs[1];
+				    break;
+			    case "AUTOOPENBROWSER":
+			    	autoOpen=Boolean.parseBoolean(strs[1]);
+		    }
+	    }
+	    if(username!=null&&password!=null)
+	    	Shared.AUTH=new String(Base64.getEncoder().encode((username+":"+password).getBytes()),StandardCharsets.US_ASCII);
+	    Server server=new Server();
+	    HTTPContainer container=new HTTPContainer();
+	    container.env(new HashMap<>(){
+		    {
+			    put("webroot",Shared.WEBROOT);
+			    put("exe",new HashMap<String,String>(){
+				    {
+				    	put("/accountadmin","AccountAdmin");
+				    	put("/mailadmin","MailAdmin");
+				    	put("/download","Download");
+				    	put("/upload","Upload");
+				    }
+			    });
+		    }
+	    });
+        server.add(Shared.WEBADDRESS,container);
+	    if(autoOpen&&Desktop.isDesktopSupported())
+	    {
+		    try
+		    {
+			    URI uri=URI.create("http://"+Shared.WEBADDRESS+"/index.html");
+			    Desktop dp=Desktop.getDesktop();
+			    if (dp.isSupported(Desktop.Action.BROWSE))
+				    dp.browse(uri);
+		    }catch(Exception e){e.printStackTrace();}
+	    }
+    }
+}
+
+---------- END src/Main.java ----------
+
+---------- BEGIN web/account.html ----------
+<html>
+	<head>
+		<title>Muzhik: Account</title>
+		<link rel='shortcut icon' href='./icon.ico'/>
+		<link rel='stylesheet' href='./css.css' type='text/css'/>
+		<script src='./jquery-min.js'></script>
+	</head>
+	<body>
+		<div id='headTable'>
+			<h2>ACCOUNT</h2>
+			<div id='links' class='tr'>
+				<h3 class='td'><a href='./mail.html'>Mail Box</a></h3>
+				<h3 class='td'><a href='./account.html'>Account Management</a></h3>
+			</div>
+			<div id='headline' class='tr'>
+			</div>
+			<hr/>
+		</div>
+		<div id='blankTable'></div>
+		<div id='showTable'></div>
+		<script src='./account.js'></script>
+	</body>
+</html>
+
+---------- END web/account.html ----------
+
+---------- BEGIN web/account.js ----------
+function select(button)
+{
+	$.ajax
+	({
+		type:'GET',
+		dataType:'text',
+		url:'./accountadmin',
+		data:'operation=select&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')');
+			var resultForm='';
+			data.forEach(function(result)
+			{
+				resultForm+="<form class='tr'>";
+				for(column in columns)
+				{
+					var columnInfo=columns[column];
+					var key=columnInfo.key;
+					if(key=='')
+						continue;
+					var value=result[key]!=null?result[key]:'';
+					if(columnInfo.type=='view')
+						resultForm+="<input class='td' type='text' value='"+value+"' disabled>";
+					else if(columnInfo.type=='password')
+						resultForm+=
+							"<input type='hidden' name='"+"p"+key+"' value='"+value+"'>\
+							<input class='td' type='password' name='"+key+"' value='"+value+"' list='"+key+"' oninput='updateable($(this))'>";
+					else
+						resultForm+=
+							"<input type='hidden' name='"+"p"+key+"' value='"+value+"'>\
+							<input class='td' type='text' name='"+key+"' value='"+value+"' list='"+key+"' oninput='updateable($(this))'>";
+				}
+				resultForm+=
+					"<div class='td tr'>\
+					<div class='td tb'>\
+					<button class='update' type='button' onclick='update($(this));' disabled>Update</button>\
+					</div>\
+					<div class='td tb'>\
+					<button class='delete' type='button' onclick='del($(this));'>Delete</button>\
+					</div>\
+					</div>\
+					</form>";
+			});
+			switch(button.attr('class'))
+			{
+				case 'insert':
+					$('div#showTable').prepend(resultForm);
+					break;
+				case 'update':
+					button.parents('form').replaceWith(resultForm);
+					break;
+			}
+			if(data.rows==0)
+				alert('None records matched!');
+			$(window).resize();
+		},
+		error:function(){errorTip('Offline!');}
+	});
+}
+
+function insr(button)
+{
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./accountadmin',
+		data:'operation=insert&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')')[0];
+			if(data)
+				select(button);
+			else
+				errorTip('Error!');
+		},
+		error:function(){errorTip('Offline!');}
+	});
+}
+
+function update(button)
+{
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./accountadmin',
+		data:'operation=update&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')')[0];
+			if(data)
+				select(button);
+			else
+				errorTip('Error!');
+		},
+		error:function(){errorTip('Offline!');}
+	});
+}
+
+function del(button)
+{
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./accountadmin',
+		data:'operation=delete&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')')[0];
+			if(data)
+				button.parents('form').remove();
+			else
+				errorTip('Error!');
+		},
+		error:function(){errorTip('Offline!');}
+	});
+}
+
+function errorTip(message)
+{
+	var tip='Error!\n'+message;
+	if(message=='Offline!')
+		tip+='\nPlease check your network connection and try again!';
+	else
+		tip+='\nPlease check your parameters and try again!';
+	alert(tip);
+}
+
+function insertable(input)
+{
+	var flag=true;
+	var form=input.parents('form');
+	for(column in columns)
+	{
+		var columnInfo=columns[column];
+		switch(columnInfo.type)
+		{
+			case 'primary':
+				if(form.find("input:text[name='"+columnInfo.key+"']").val()=='')
+					flag=false;
+				break;
+			case 'view':
+				if(form.find("input:text[name='"+columnInfo.key+"']").val()!='')
+					flag=false;
+				break;
+		}
+		if(!flag)
+			break;
+	}
+	if(flag)
+		$('button.insert').removeAttr('disabled');
+	else
+		$('button.insert').attr('disabled',true);
+}
+
+function updateable(input)
+{
+	var flag=false;
+	var form=input.parents('form');
+	for(column in columns)
+	{
+		var columnInfo=columns[column];
+		var key=columnInfo.key;
+		if(key=='')
+			continue;
+		if(form.find("input[name='"+key+"']").val()!=form.find("input[name='p"+key+"']").val())
+			flag=true;
+		if(columnInfo.type=='primary'&&form.find("input[name='"+key+"']").val()=='')
+		{
+			flag=false;
+			break;
+		}
+	}
+	if(flag)
+		form.find('button.update').removeAttr('disabled');
+	else
+		form.find('button.update').attr('disabled',true);
+}
+
+$(window).resize(function()
+{
+	$('div#blankTable').css('height',$('div#headTable').css('height'));
+});
+var columns=
+{
+	'Username':{'key':'username','type':'primary','foreign':false},
+	'Password':{'key':'password','type':'password','foreign':false},
+	'SMTP Server':{'key':'smtp','type':'field','foreign':false},
+	'POP3 Server':{'key':'pop3','type':'field','foreign':false},
+	'Operation':{'key':'','type':'','foreign':false}
+};
+var headline='';
+for(column in columns)
+{
+	var columnInfo=columns[column]; 
+	headline+="<span class='td'>";
+	headline+=column;
+	headline+="</span>";
+}
+$('div#headline').html(headline);
+var selectForm="<form class='tr'>";
+for(column in columns)
+{
+	var key=columns[column].key;
+	if(key=='')
+		continue;
+	selectForm+="<input class='td' type='text' name='"+key+"' value='' list='"+key+"' oninput='insertable($(this));'>";
+}
+selectForm+=
+	"<div class='td tr'>\
+	<div class='td tb'>\
+	<button id='insert' class='insert' type='button' onclick='insr($(this));' disabled>Insert</button>\
+	</div>\
+	<div class='td tb'>\
+	</div>\
+	</div>\
+	</form>";
+$('hr').before(selectForm);
+select($('#insert'));
+
+---------- END web/account.js ----------
+
+---------- BEGIN web/css.css ----------
+@font-face
+{
+	font-family:'Product Sans';
+	src:url(./font.woff2) format('woff2');
+}
+body
+{
+	margin:0;
+	padding:0;
+	text-align:center;
+	font-family:'Product Sans','Times New Roman','Microsoft YaHei','SimSun';
+	cursor:default;
+}
+:focus
+{
+	outline:none;
+}
+div
+{
+	width:100%;
+}
+h2
+{
+	margin:2;
+	color:#009ed6;
+}
+h3
+{
+	margin:2;
+}
+a
+{
+	text-decoration:none;
+	color:#009ed6;
+}
+a:visited
+{
+	color:#009ed6;
+}
+form
+{
+	margin-bottom:0;
+}
+input
+{
+	width:100%;
+	color:black;
+	font-family:'Product Sans','Times New Roman','Microsoft YaHei','SimSun';
+}
+button
+{
+	width:60;
+	font-family:'Product Sans','Times New Roman','Microsoft YaHei','SimSun';
+}
+hr
+{
+	margin:0;
+}
+.tr
+{
+	display:flex;
+}
+.tr:hover
+{
+	background-color:#6edbff;
+}
+.td
+{
+	flex:1;
+	margin:2;
+	min-width:0;
+}
+.tb
+{
+	margin-top:0;
+	margin-bottom:0;
+}
+#links
+{
+	background-color:#009ed6;
+}
+#headline
+{
+	background-color:white;
+}
+#headTable
+{
+	position:fixed;
+	background-color:white;
+}
+#retrieve,#writenew
+{
+	width:45%;
+}
+#floatingwindow
+{
+	position:fixed;
+	width:100%;
+	height:100%;
+	text-align:center;
+	top:0;
+	margin:0;
+	padding:0;
+	display:none;
+	z-index:1;
+}
+#mask
+{
+	position:absolute;
+	width:100%;
+	height:100%;
+	top:0;
+	margin:0;
+	padding:0;
+	background-color: grey;
+	opacity:0.8;
+	z-index:-1;
+}
+#floatingwindow input,#floatingwindow select,#floatingwindow textarea
+{
+	width:100%;
+	border-radius: 5px;
+	border: 1px solid grey;
+	background: none;
+	font-family:'Product Sans';
+}
+#floatingwindow textarea
+{
+	height:400px;
+}
+#detail
+{
+	width:90%;
+	border-radius: 5px;
+	border: 1px solid grey;
+	background: none;
+	font-family:'Product Sans';
+	margin: 0 auto;
+	padding: 10px;
+	background-color: white;
+}
+#detail table
+{
+	width:100%;
+	word-break: break-all;
+	word-wrap: break-word;
+}
+#detail th
+{
+	width:60px;
+	font-weight:normal;
+	text-align:center;
+}
+#detail td
+{
+	font-weight:normal;
+	text-align:center;
+}
+#detail button
+{
+	border-radius: 5px;
+	border: 1px solid grey;
+	font-family:'Product Sans';
+	font-size:14px;
+	font-weight:bold;
+	width:24%;
+	height:25px;
+	color:white;
+	border:none;
+}
+.buttonred
+{
+	background-color: red;
+}
+.buttongreen
+{
+	background-color: green;
+}
+.buttonblue
+{
+	background-color: blue;
+}
+.buttongrey
+{
+	background-color: grey;
+}
+#attachments
+{
+	text-align:left;
+}
+
+---------- END web/css.css ----------
+
+---------- BEGIN web/index.html ----------
+<html><head><script>window.open("./mail.html","_self");</script></head><body><a href="./mail.html">Click to redirect</a></body></html>
+---------- END web/index.html ----------
+
+---------- BEGIN web/mail.html ----------
+<html>
+	<head>
+		<title>Muzhik: Mail</title>
+		<link rel='shortcut icon' href='./icon.ico'/>
+		<link rel='stylesheet' href='./css.css' type='text/css'/>
+		<script src='./jquery-min.js'></script>
+	</head>
+	<body>
+		<div id='headTable'>
+			<h2>MAIL</h2>
+			<div id='links' class='tr'>
+				<h3 class='td'><a href='./mail.html'>Mail Box</a></h3>
+				<h3 class='td'><a href='./account.html'>Account Management</a></h3>
+			</div>
+			<form class='tr'>
+				<select id='account' class='td account' name='username' onchange='select($(this));'>
+					<option value='' selected>All Accounts</option>
+				</select>
+				<select id='mailbox' class='td' name='status' onchange='select($(this));'>
+					<option value=''>All Mailboxs</option>
+					<option value='R' selected>Inbox</option>
+					<option value='S'>Sent</option>
+					<option value='D'>Drafts</option>
+				</select>
+				<div class='td tr'>
+					<div class='td tb'>
+						<button id='retrieve' class='R' type='button' onclick='retr($(this));'>Retrieve From Server</button>
+						<button id='writenew' class='D S' type='button' onclick='viewnew();'>Write New Mail</button>
+					</div>
+				</div>
+			</form>
+			<hr size='0' style='color: white;' />
+			<div id='headline' class='tr'>
+			</div>
+			<hr />
+		</div>
+		<div id='blankTable'></div>
+		<div id='showTable'></div>
+		<div id='floatingwindow'>
+			<div id='mask'></div>
+			<table width='100%' height='100%'><tr><td align='center'>
+			<form id='detail'>
+				<input id='id' type='hidden' name='id' value=''>
+				<input id='username' type='hidden' name='username' value=''>
+				<table>
+					<tbody>
+						<tr>
+							<th>
+								<label for='sender'>From</label>
+							</th>
+							<td>
+								<input id='sendertxt' class='R S' type='text' value='' readonly>
+								<select id='sender' class='D' name='sender' class='account'>
+									<option value=''>Required, please select one</option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<th>
+								<label for='receivers'>To</label>
+							</th>
+							<td>
+								<input id='receivers' type='text' name='receivers' placeholder='Required, split by semicolon(;)' value=''>
+							</td>
+						</tr>
+						<tr>
+							<th>
+								<label for='subject'>Subject</label>
+							</th>
+							<td>
+								<input id='subject' type='text' name='subject' placeholder='Optional' value=''>
+							</td>
+						</tr>
+						<tr class='R S'>
+							<th>
+								<label for='date'>Date</label>
+							</th>
+							<td>
+								<input id='date' type='text' name='date' placeholder='' value=''>
+							</td>
+						</tr>
+						<tr>
+							<th>
+								<label for='attachments'>Files</label>
+							</th>
+							<td>
+								<div id='attachments'></div>
+							</td>
+						</tr>
+						<tr>
+							<th>
+								<label for='content'>Content</label>
+							</th>
+							<td>
+								<textarea id='content' type='text' name='content' placeholder=''></textarea>
+							</td>
+						</tr>
+					</tbody>
+					<tfoot>
+						<tr>
+							<td id='formfoot' colspan='2'>
+								<button class='D buttonred' type='button' onclick='send($(this));'>Send</button>
+								<button class='D buttongreen' type='button' onclick='update($(this));'>Save</button>
+								<button class='buttongrey' type='button' onclick='closewindow();'>Close</button>
+							</td>
+						</tr>
+					</tfoot>
+				</table>
+			</form>
+		</td></tr></table>
+		</div>
+		<script src='./mail.js'></script>
+	</body>
+</html>
+
+---------- END web/mail.html ----------
+
+---------- BEGIN web/mail.js ----------
+function select(button)
+{
+	$.ajax
+	({
+		type:'GET',
+		dataType:'text',
+		url:'./mailadmin',
+		data:'operation=select&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')');
+			var columns;
+			switch($('#mailbox').val())
+			{
+				case '':
+					columns={
+						'Account':{'key':'username','type':'field'},
+						'Mailbox':{'key':'status','type':'field'},
+						'Subject':{'key':'subject','type':'field'},
+						'Time':{'key':'mtime','type':'field'},
+						'Operation':{'key':'','type':''}
+					}
+					break;
+				case 'R':
+					columns={
+						'Account':{'key':'username','type':'field'},
+						'Subject':{'key':'subject','type':'field'},
+						'Sender':{'key':'sender','type':'field'},
+						'Time':{'key':'mtime','type':'field'},
+						'Operation':{'key':'','type':''}
+					}
+					break;
+				case 'S':
+				case 'D':
+					columns={
+						'Account':{'key':'username','type':'field'},
+						'Subject':{'key':'subject','type':'field'},
+						'Receivers':{'key':'receivers','type':'field'},
+						'Time':{'key':'mtime','type':'field'},
+						'Operation':{'key':'','type':''}
+					}
+					break;
+			}
+			if($('#account').val()!='')
+				delete columns.Account;
+			var headline='';
+			for(column in columns)
+				headline+="<span class='td'>"+column+"</span>";
+			$('div#headline').html(headline);
+			$('div#showTable').html('');
+			data.forEach(function(result)
+			{
+				var resultForm=
+					"<form class='tr'>\
+					<input type='hidden' name='id' value='"+result['id']+"'>\
+					<input type='hidden' name='status' value='"+result['status']+"'>";
+				for(column in columns)
+				{
+					var columnInfo=columns[column];
+					var key=columnInfo.key;
+					if(key=='')
+						continue;
+					var value=result[key]!=null?result[key]:'';
+					if(key=='status')
+					{
+						switch(value)
+						{
+							case 'R':
+								value='Inbox';
+								break;
+							case 'S':
+								value='Sent';
+								break;
+							case 'D':
+								value='Drafts';
+								break;
+						}
+					}
+					resultForm+="<input class='td' type='"+(columnInfo.type!='password'?'text':'password')+"' name='"+key+"' value='"+value+"' list='"+key+"' oninput='updateable($(this))' readonly>";
+				}
+				resultForm+=
+					"<div class='td tr'>\
+					<div class='td tb'>\
+					<button type='button' onclick='view($(this));'>View</button>\
+					</div>\
+					<div class='td tb'>\
+					<button type='button' onclick='del($(this));'>Delete</button>\
+					</div>\
+					</div>\
+					</form>";
+				$('div#showTable').append(resultForm);
+			});
+			$(window).resize();
+		},
+		error:function(){errorTip('Failed to get mails!');}
+	});
+}
+
+function view(button)
+{
+	$.ajax
+	({
+		type:'GET',
+		dataType:'text',
+		url:'./mailadmin',
+		data:'operation=view&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')');
+			$('#id').val(button.parents('form').find('input[name=id]').val());
+			$('#sender').val(data['sender']);
+			$('#sendertxt').val(data['sender']);
+			$('#receivers').val(data['receivers']);
+			$('#subject').val(data['subject']);
+			$('#date').val(data['date']);
+			$('#content').val(data['content']);
+			var attachments="<a href='./download?id="+$('#id').val()+"' target='_blank'>Source</a>";
+			var i=0;
+			data['attachments'].forEach(function(result){
+				attachments+="&nbsp;&nbsp;&nbsp;&nbsp;<a href='./download?id="+$('#id').val()+"&aid="+(i++)+"' target='_blank'>"+result+"</a>";
+			});
+			$('#attachments').html(attachments);
+			$('#floatingwindow').find('.R,.S,.D').css('display','none');
+			switch(button.parents('form').find('input[name=status]').val())
+			{
+				case 'R':
+					$('#floatingwindow .R').css('display','inherit');
+					$('#floatingwindow tr.R').css('display','table-row');
+					$('#floatingwindow').find('input,select,textarea').attr('readonly',true);
+					break;
+				case 'S':
+					$('#floatingwindow .S').css('display','inherit');
+					$('#floatingwindow tr.S').css('display','table-row');
+					$('#floatingwindow').find('input,select,textarea').attr('readonly',true);
+					break;
+				case 'D':
+					$('#floatingwindow .D').css('display','inherit');
+					$('#floatingwindow tr.D').css('display','table-row');
+					$('#floatingwindow').find('input,select,textarea').attr('readonly',false);
+					break;
+			}
+			$('#floatingwindow').css('display','inherit');
+		},
+		error:function(){errorTip('Failed to load the mail!');}
+	});
+}
+
+function viewnew()
+{
+	$('#id').val('');
+	$('#sender').val($('#account').val());
+	$('#sendertxt').val('');
+	$('#receivers').val('');
+	$('#subject').val('');
+	$('#date').val('');
+	$('#content').val('');
+	$('#attachments').html("<input type='file' multiple>");
+	$('#floatingwindow').find('.R,.S').css('display','none');
+	$('#floatingwindow .D').css('display','inherit');
+	$('#floatingwindow tr.D').css('display','table-row');
+	$('#floatingwindow').find('input,select,textarea').attr('readonly',false);
+	$('#floatingwindow').css('display','inherit');
+}
+
+function retr(button)
+{
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./mailadmin',
+		data:'operation=retrieve&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')');
+			var i=1;
+			var accounts=$('#account option');
+			data.forEach(function(result)
+			{
+				if(!result)
+					errorTip('Failed to retrieve mails from account "'+accounts[i].innerHTML+'" !');
+				i++;
+			});
+			select(button);
+		},
+		error:function(){errorTip('Failed to retrieve mails!');}
+	});
+	$(window).resize();
+}
+
+function update(button)
+{
+	$('#username').val($('#sender').val());
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./mailadmin',
+		data:'operation=update&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')')[0];
+			if(data)
+			{
+				closewindow();
+				select($('#account'));
+			}
+			else
+				errorTip('Failed to save the mail!');
+		},
+		error:function(){errorTip('Failed to save the mail!');}
+	});
+}
+
+function send(button)
+{
+	$('#username').val($('#sender').val());
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./mailadmin',
+		data:'operation=send&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')')[0];
+			if(data)
+			{
+				closewindow();
+				select($('#account'));
+			}
+			else
+				errorTip('Failed to send the mail!');
+		},
+		error:function(){errorTip('Failed to send the mail!');}
+	});
+}
+
+function del(button)
+{
+	$.ajax
+	({
+		type:'POST',
+		dataType:'text',
+		url:'./mailadmin',
+		data:'operation=delete&'+button.parents('form').serialize(),
+		success:function(data)
+		{
+			data=eval('('+data+')')[0];
+			if(data)
+				button.parents('form').remove();
+			else
+				errorTip('Failed to delete the mail!');
+		},
+		error:function(){errorTip('Failed to delete the mail!');}
+	});
+}
+
+function errorTip(message)
+{
+	var tip='Error!\n'+message;
+	if(message=='Offline!')
+		tip+='\nPlease check your network connection and try again!';
+	else
+		tip+='\nPlease check your settings and try again!';
+	alert(tip);
+}
+
+function closewindow()
+{
+	$('#floatingwindow').css('display','none');
+}
+
+$(window).resize(function()
+{
+	$('div#blankTable').css('height',$('div#headTable').css('height'));
+});
+$.ajax
+({
+	type:'GET',
+	dataType:'text',
+	url:'./accountadmin',
+	success:function(data)
+	{
+		data=eval('('+data+')');
+		data.forEach(function(result)
+		{
+			var option="<option value='"+result+"'>"+result+"</option>";
+			$('#account').append(option);
+			$('#sender').append(option);
+		});
+	},
+	error:function(){errorTip('Failed to get account list!');}
+});
+select($('#account'));
+
+---------- END web/mail.js ----------
+

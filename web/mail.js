@@ -114,10 +114,11 @@ function view(button)
 			$('#subject').val(data['subject']);
 			$('#date').val(data['date']);
 			$('#content').val(data['content']);
-			var attachments="<a href='./download?id="+$('#id').val()+"' target='_blank'>Source</a>";
+			var attachments="<span class='D'><button class='buttonblue' type='button' onclick=\"$('#file').click();\">Add</button><input id='file' type='file' multiple onchange='addbutton($(this));'></span>\
+				<span class='R S'><a href='./download?id="+$('#id').val()+"' target='_blank'>Source</a><span>";
 			var i=0;
 			data['attachments'].forEach(function(result){
-				attachments+="&nbsp;&nbsp;&nbsp;&nbsp;<a href='./download?id="+$('#id').val()+"&aid="+(i++)+"' target='_blank'>"+result+"</a>";
+				attachments+="<span>&nbsp;&nbsp;&nbsp;&nbsp;<a href='./download?id="+$('#id').val()+"&aid="+(i++)+"' target='_blank'>"+result+"</a>&nbsp;<a class='D' href='#' onclick=\"delbutton($(this));\">❌</a><span>";
 			});
 			$('#attachments').html(attachments);
 			$('#floatingwindow').find('.R,.S,.D').css('display','none');
@@ -145,6 +146,19 @@ function view(button)
 	});
 }
 
+function addbutton(button)
+{
+	var filename=button.val();
+	filename=filename.substring(filename.lastIndexOf('\\')+1);
+	button.before("<span>&nbsp;&nbsp;&nbsp;&nbsp;<a href='./download?id="+$('#id').val()+"&aid=0' target='_blank'>"+filename+"</a>&nbsp;<a class='D' href='#' onclick=\"delbutton($(this));\">❌</a></span>");
+	button.val('');
+}
+
+function delbutton(a)
+{
+	a.parents('span').remove();
+}
+
 function viewnew()
 {
 	$('#id').val('');
@@ -154,7 +168,7 @@ function viewnew()
 	$('#subject').val('');
 	$('#date').val('');
 	$('#content').val('');
-	$('#attachments').html("<input type='file' multiple>");
+	$('#attachments').html("<span class='D'><button class='buttonblue' type='button' onclick=\"$('#file').click();\">Add</button><input id='file' type='file' multiple onchange='addbutton($(this));'></span>");
 	$('#floatingwindow').find('.R,.S').css('display','none');
 	$('#floatingwindow .D').css('display','inherit');
 	$('#floatingwindow tr.D').css('display','table-row');

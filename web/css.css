@@ -31,11 +31,6 @@ h3
 a
 {
 	text-decoration:none;
-	color:#009ed6;
-}
-a:visited
-{
-	color:#009ed6;
 }
 form
 {
@@ -176,8 +171,9 @@ hr
 {
 	background-color: green;
 }
-.buttonblue
+#detail .buttonblue
 {
+	width:7%;
 	background-color: blue;
 }
 .buttongrey
@@ -187,4 +183,24 @@ hr
 #attachments
 {
 	text-align:left;
+}
+#links a
+{
+	color:white;
+}
+#links a:visited
+{
+	color:white;
+}
+#floatingwindow a
+{
+	color:#009ed6;
+}
+#floatingwindow a:visited
+{
+	color:#009ed6;
+}
+#file
+{
+	display:none;
 }
